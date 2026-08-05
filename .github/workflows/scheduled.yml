@@ -1,0 +1,97 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    # Every 5 minutes during market hours (9:15 AM - 3:30 PM IST, Mon-Fri)
+    - cron: '*/5 3-8 * * 1-5'
+    # Daily cleanup at midnight
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run'
+        required: true
+        default: 'market-update'
+
+jobs:
+  market-data-update:
+    name: Update Market Data
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'market-update'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+      
+      - name: Update market data
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+        run: |
+          cd backend
+          python -c "from app.services.market_data import update_market_data; import asyncio; asyncio.run(update_market_data())"
+      
+      - name: Update option chain data
+        if: success()
+        run: |
+          cd backend
+          python -c "from app.services.option_chain import update_option_chain; import asyncio; asyncio.run(update_option_chain('NIFTY'))"
+      
+      - name: Check alerts
+        if: success()
+        run: |
+          cd backend
+          python -c "from app.services.alerts import check_all_alerts; import asyncio; asyncio.run(check_all_alerts())"
+
+  cleanup-old-data:
+    name: Cleanup Old Data
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.inputs.task == 'cleanup'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Run cleanup
+        run: |
+          cd backend
+          python -c "from app.services.maintenance import cleanup_old_data; import asyncio; asyncio.run(cleanup_old_data())"
+
+  generate-daily-report:
+    name: Generate Daily Report
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    # Run only on weekdays at 4 PM IST (10:30 AM UTC)
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+      
+      - name: Generate report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          cd backend
+          python -c "from app.services.reports import generate_daily_report; import asyncio; asyncio.run(generate_daily_report())"

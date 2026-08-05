@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: chartanalytics-api
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+
+cron:
+  - name: market-data-update
+    url: https://chartanalytics-api.onrender.com/api/v1/market/update
+    schedule: "*/5 * * * *"
+    description: Update market data every 5 minutes
+    headers:
+      - key: Authorization
+        value: ${CRON_SECRET}

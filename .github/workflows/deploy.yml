@@ -10,6 +10,7 @@ jobs:
     name: Deploy Frontend (Vercel)
     runs-on: ubuntu-latest
     environment: production
+    if: secrets.VERCEL_TOKEN != ''
     
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +28,7 @@ jobs:
     name: Deploy Backend (Render)
     runs-on: ubuntu-latest
     environment: production
+    if: secrets.RENDER_API_KEY != ''
     
     steps:
       - uses: actions/checkout@v4
@@ -46,4 +48,4 @@ jobs:
     steps:
       - name: Send notification
         run: |
-          echo "Deployment completed successfully"
+          echo "Deployment workflow completed"

@@ -150,6 +150,32 @@ uvicorn app.main:app --reload --port 8000
 3. Create a service account and download the JSON key
 4. Set `GOOGLE_APPLICATION_CREDENTIALS` in your backend `.env`
 
+### 🗄️ Local JSON Fallback (No Firebase Required)
+
+The application works **without Firebase** using a local JSON-based storage system. This is ideal for:
+
+- Local development
+- Testing without cloud dependencies
+- Small-scale personal use
+
+**How it works:**
+- Data is stored in `backend/data/*.json` files
+- Same API interface as Firebase
+- Automatic fallback when Firebase credentials are not configured
+
+**To enable local storage:**
+1. Leave Firebase environment variables empty in `.env`
+2. The app will automatically use local JSON storage
+3. Data files will be created in `backend/data/` directory
+
+**Collections available locally:**
+- `users.json` - User data
+- `trades.json` - Trade journal entries
+- `strategies.json` - Trading strategies
+- `alerts.json` - Alert configurations
+- `market_data.json` - Market data cache
+- `options_chain.json` - Option chain data
+
 ### Running with Docker
 
 ```bash
