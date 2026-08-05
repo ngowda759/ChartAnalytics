@@ -21,10 +21,10 @@ router = APIRouter()
 async def get_indices():
     """Get all major market indices with real-time data"""
     logger.info("fetching_indices")
-    
+
     service = get_market_service()
     quotes = await service.get_indices()
-    
+
     return [
         IndexQuote(
             symbol=q.symbol,
@@ -48,13 +48,13 @@ async def get_indices():
 async def get_quote(symbol: str, force_refresh: bool = False):
     """Get real-time quote for a symbol"""
     logger.info("fetching_quote", symbol=symbol, force_refresh=force_refresh)
-    
+
     service = get_market_service()
     quote = await service.get_quote(symbol, force_refresh)
-    
+
     if not quote:
         raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found")
-    
+
     return MarketQuote(
         symbol=quote.symbol,
         name=quote.name,
@@ -78,10 +78,10 @@ async def get_ohlc(
 ):
     """Get OHLC data for charting"""
     logger.info("fetching_ohlc", symbol=symbol, interval=interval, limit=limit)
-    
+
     service = get_market_service()
     ohlc_data = await service.get_ohlc(symbol, interval, limit)
-    
+
     return [
         OHLC(
             timestamp=c.timestamp,
@@ -104,21 +104,18 @@ async def get_historical_data(
 ):
     """Get historical OHLC data for a symbol"""
     logger.info("fetching_historical", symbol=symbol, interval=interval)
-    
+
     if range_from is None:
         range_from = datetime.utcnow() - timedelta(days=365)
     if range_to is None:
         range_to = datetime.utcnow()
-    
+
     service = get_market_service()
     ohlc_data = await service.get_ohlc(symbol, interval, 500)
-    
+
     # Filter by date range
-    filtered_data = [
-        c for c in ohlc_data
-        if range_from <= c.timestamp <= range_to
-    ]
-    
+    filtered_data = [c for c in ohlc_data if range_from <= c.timestamp <= range_to]
+
     return HistoricalData(
         symbol=symbol,
         interval=interval,
@@ -142,13 +139,13 @@ async def get_historical_data(
 async def get_watchlist(user_id: str = "user_1"):
     """Get user's watchlist"""
     logger.info("fetching_watchlist", user_id=user_id)
-    
+
     # Default watchlist
     symbols = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "RELIANCE", "HDFCBANK"]
-    
+
     service = get_market_service()
     quotes = await service.get_quotes(symbols)
-    
+
     return [
         WatchlistItem(
             symbol=q.symbol,
@@ -164,13 +161,13 @@ async def get_watchlist(user_id: str = "user_1"):
 async def add_to_watchlist(item: WatchlistCreate, user_id: str = "user_1"):
     """Add symbol to watchlist"""
     logger.info("adding_to_watchlist", user_id=user_id, symbol=item.symbol)
-    
+
     service = get_market_service()
     quote = await service.get_quote(item.symbol)
-    
+
     if not quote:
         raise HTTPException(status_code=404, detail=f"Symbol {item.symbol} not found")
-    
+
     return WatchlistItem(
         symbol=quote.symbol,
         name=quote.name,
@@ -183,7 +180,7 @@ async def add_to_watchlist(item: WatchlistCreate, user_id: str = "user_1"):
 async def remove_from_watchlist(symbol: str, user_id: str = "user_1"):
     """Remove symbol from watchlist"""
     logger.info("removing_from_watchlist", user_id=user_id, symbol=symbol)
-    
+
     return {"message": f"{symbol} removed from watchlist"}
 
 
@@ -191,8 +188,8 @@ async def remove_from_watchlist(symbol: str, user_id: str = "user_1"):
 async def search_symbols(q: str = Query(..., min_length=1)):
     """Search for symbols"""
     logger.info("searching_symbols", query=q)
-    
+
     service = get_market_service()
     results = await service.search_symbols(q)
-    
+
     return {"results": results}

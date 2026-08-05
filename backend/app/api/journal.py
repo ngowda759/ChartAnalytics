@@ -26,16 +26,16 @@ async def get_trades(
 ):
     """Get user's trade history"""
     logger.info("fetching_trades", user_id=user_id)
-    
+
     # Mock trades
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK"]
     trades = []
-    
+
     for i in range(min(limit, 20)):
         entry_price = 24567.85 * random.uniform(0.98, 1.02)
         exit_price = entry_price * random.uniform(0.97, 1.03)
         quantity = random.choice([50, 75, 100, 150, 200])
-        
+
         trade = Trade(
             id=f"trade_{i + 1}",
             user_id=user_id,
@@ -47,21 +47,37 @@ async def get_trades(
                 "quantity": quantity,
                 "timestamp": datetime.utcnow() - timedelta(days=random.randint(1, 30)),
             },
-            exit={
-                "price": round(exit_price, 2),
-                "quantity": quantity,
-                "timestamp": datetime.utcnow() - timedelta(days=random.randint(0, 29)),
-            } if random.random() > 0.3 else None,
-            status=random.choice(["open", "closed", "cancelled"]) if random.random() > 0.2 else "closed",
+            exit=(
+                {
+                    "price": round(exit_price, 2),
+                    "quantity": quantity,
+                    "timestamp": datetime.utcnow()
+                    - timedelta(days=random.randint(0, 29)),
+                }
+                if random.random() > 0.3
+                else None
+            ),
+            status=(
+                random.choice(["open", "closed", "cancelled"])
+                if random.random() > 0.2
+                else "closed"
+            ),
             strategy=random.choice(["ORB", "VWAP", "EMA", "Momentum", "Scalping"]),
-            tags=random.sample(["intraday", "swing", "options", "futures", "bullish", "bearish"], k=2),
-            pnl=round((exit_price - entry_price) * quantity * (1 if random.random() > 0.5 else -1), 2),
+            tags=random.sample(
+                ["intraday", "swing", "options", "futures", "bullish", "bearish"], k=2
+            ),
+            pnl=round(
+                (exit_price - entry_price)
+                * quantity
+                * (1 if random.random() > 0.5 else -1),
+                2,
+            ),
             fees=round(random.uniform(50, 500), 2),
             created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
             updated_at=datetime.utcnow(),
         )
         trades.append(trade)
-    
+
     return trades
 
 
@@ -69,10 +85,10 @@ async def get_trades(
 async def get_trade(trade_id: str):
     """Get a specific trade"""
     logger.info("fetching_trade", trade_id=trade_id)
-    
+
     entry_price = 24567.85
     quantity = 100
-    
+
     return Trade(
         id=trade_id,
         user_id="user_1",
@@ -103,7 +119,7 @@ async def get_trade(trade_id: str):
 async def create_trade(trade_data: TradeCreate, user_id: str = "user_1"):
     """Create a new trade"""
     logger.info("creating_trade", user_id=user_id)
-    
+
     return Trade(
         id=f"trade_{random.randint(1000, 9999)}",
         user_id=user_id,
@@ -127,9 +143,9 @@ async def create_trade(trade_data: TradeCreate, user_id: str = "user_1"):
 async def update_trade(trade_id: str, updates: TradeUpdate):
     """Update a trade (add exit, notes, etc.)"""
     logger.info("updating_trade", trade_id=trade_id)
-    
+
     trade = await get_trade(trade_id)
-    
+
     if updates.exit_price:
         trade.exit = {
             "price": updates.exit_price,
@@ -137,19 +153,24 @@ async def update_trade(trade_id: str, updates: TradeUpdate):
             "timestamp": datetime.utcnow(),
         }
         trade.status = "closed"
-        
+
         # Calculate P&L
         multiplier = 1 if trade.type == "long" else -1
-        trade.pnl = round((trade.exit["price"] - trade.entry["price"]) * trade.exit["quantity"] * multiplier, 2)
-    
+        trade.pnl = round(
+            (trade.exit["price"] - trade.entry["price"])
+            * trade.exit["quantity"]
+            * multiplier,
+            2,
+        )
+
     if updates.notes:
         trade.notes = updates.notes
-    
+
     if updates.tags:
         trade.tags = updates.tags
-    
+
     trade.updated_at = datetime.utcnow()
-    
+
     return trade
 
 
@@ -157,20 +178,35 @@ async def update_trade(trade_id: str, updates: TradeUpdate):
 async def get_performance_metrics(user_id: str = "user_1"):
     """Get trading performance metrics"""
     logger.info("fetching_performance_metrics", user_id=user_id)
-    
+
     trades = await get_trades(user_id, limit=100)
     closed_trades = [t for t in trades if t.status == "closed" and t.pnl is not None]
-    
+
     winning_trades = [t for t in closed_trades if t.pnl and t.pnl > 0]
     losing_trades = [t for t in closed_trades if t.pnl and t.pnl <= 0]
-    
+
     total_pnl = sum(t.pnl for t in closed_trades if t.pnl)
-    avg_win = sum(t.pnl for t in winning_trades if t.pnl) / len(winning_trades) if winning_trades else 0
-    avg_loss = sum(t.pnl for t in losing_trades if t.pnl) / len(losing_trades) if losing_trades else 0
-    
+    avg_win = (
+        sum(t.pnl for t in winning_trades if t.pnl) / len(winning_trades)
+        if winning_trades
+        else 0
+    )
+    avg_loss = (
+        sum(t.pnl for t in losing_trades if t.pnl) / len(losing_trades)
+        if losing_trades
+        else 0
+    )
+
     win_rate = (len(winning_trades) / len(closed_trades) * 100) if closed_trades else 0
-    profit_factor = abs(sum(t.pnl for t in winning_trades if t.pnl) / sum(t.pnl for t in losing_trades if t.pnl)) if losing_trades and sum(t.pnl for t in losing_trades if t.pnl) != 0 else 0
-    
+    profit_factor = (
+        abs(
+            sum(t.pnl for t in winning_trades if t.pnl)
+            / sum(t.pnl for t in losing_trades if t.pnl)
+        )
+        if losing_trades and sum(t.pnl for t in losing_trades if t.pnl) != 0
+        else 0
+    )
+
     return PerformanceMetrics(
         total_trades=len(closed_trades),
         winning_trades=len(winning_trades),
@@ -183,15 +219,41 @@ async def get_performance_metrics(user_id: str = "user_1"):
         max_drawdown=round(random.uniform(5, 15), 2),
         max_drawdown_percent=round(random.uniform(8, 20), 2),
         total_pnl=round(total_pnl, 2),
-        expectancy=round((win_rate / 100 * avg_win) - ((1 - win_rate / 100) * abs(avg_loss)), 2),
+        expectancy=round(
+            (win_rate / 100 * avg_win) - ((1 - win_rate / 100) * abs(avg_loss)), 2
+        ),
         avg_rr=round(random.uniform(1.2, 2.5), 2),
         monthly_returns=[
-            MonthlyReturn(month="Jan", return_value=round(random.uniform(-5, 10), 2), trades=random.randint(5, 20)),
-            MonthlyReturn(month="Feb", return_value=round(random.uniform(-3, 8), 2), trades=random.randint(5, 20)),
-            MonthlyReturn(month="Mar", return_value=round(random.uniform(-8, 12), 2), trades=random.randint(5, 20)),
-            MonthlyReturn(month="Apr", return_value=round(random.uniform(-2, 15), 2), trades=random.randint(5, 20)),
-            MonthlyReturn(month="May", return_value=round(random.uniform(-10, 5), 2), trades=random.randint(5, 20)),
-            MonthlyReturn(month="Jun", return_value=round(random.uniform(-5, 8), 2), trades=random.randint(5, 20)),
+            MonthlyReturn(
+                month="Jan",
+                return_value=round(random.uniform(-5, 10), 2),
+                trades=random.randint(5, 20),
+            ),
+            MonthlyReturn(
+                month="Feb",
+                return_value=round(random.uniform(-3, 8), 2),
+                trades=random.randint(5, 20),
+            ),
+            MonthlyReturn(
+                month="Mar",
+                return_value=round(random.uniform(-8, 12), 2),
+                trades=random.randint(5, 20),
+            ),
+            MonthlyReturn(
+                month="Apr",
+                return_value=round(random.uniform(-2, 15), 2),
+                trades=random.randint(5, 20),
+            ),
+            MonthlyReturn(
+                month="May",
+                return_value=round(random.uniform(-10, 5), 2),
+                trades=random.randint(5, 20),
+            ),
+            MonthlyReturn(
+                month="Jun",
+                return_value=round(random.uniform(-5, 8), 2),
+                trades=random.randint(5, 20),
+            ),
         ],
     )
 

@@ -1,4 +1,5 @@
 """Market data service with caching and real-time updates."""
+
 import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -16,33 +17,39 @@ logger = structlog.get_logger()
 @dataclass
 class CachedQuote:
     """Cached market quote with timestamp."""
+
     data: TickerData
     cached_at: datetime
     ttl_seconds: int = 60
 
 
-@dataclass 
+@dataclass
 class MarketDataService:
     """Service for fetching and caching market data."""
+
     provider: MockDataProvider = field(default_factory=MockDataProvider)
     _quote_cache: Dict[str, CachedQuote] = field(default_factory=dict)
     _cache_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    
+
     async def get_indices(self) -> List[TickerData]:
         """Get all major market indices."""
         symbols = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "SENSEX", "INDIA VIX"]
         return await self.get_quotes(symbols)
-    
-    async def get_quote(self, symbol: str, force_refresh: bool = False) -> Optional[TickerData]:
+
+    async def get_quote(
+        self, symbol: str, force_refresh: bool = False
+    ) -> Optional[TickerData]:
         """Get quote for a symbol with caching."""
         cache_key = symbol.upper()
-        
+
         # Check cache
         if not force_refresh and cache_key in self._quote_cache:
             cached = self._quote_cache[cache_key]
-            if (datetime.utcnow() - cached.cached_at).total_seconds() < cached.ttl_seconds:
+            if (
+                datetime.utcnow() - cached.cached_at
+            ).total_seconds() < cached.ttl_seconds:
                 return cached.data
-        
+
         # Fetch fresh data
         async with self._cache_lock:
             try:
@@ -56,18 +63,30 @@ class MarketDataService:
             except Exception as e:
                 logger.error("fetch_quote_failed", symbol=symbol, error=str(e))
                 # Return cached data if available
-                return self._quote_cache.get(cache_key, TickerData(
-                    symbol=symbol, name=symbol, price=0, change=0,
-                    change_percent=0, open=0, high=0, low=0, close=0,
-                    previous_close=0, volume=0, timestamp=datetime.utcnow()
-                ))
-    
+                return self._quote_cache.get(
+                    cache_key,
+                    TickerData(
+                        symbol=symbol,
+                        name=symbol,
+                        price=0,
+                        change=0,
+                        change_percent=0,
+                        open=0,
+                        high=0,
+                        low=0,
+                        close=0,
+                        previous_close=0,
+                        volume=0,
+                        timestamp=datetime.utcnow(),
+                    ),
+                )
+
     async def get_quotes(self, symbols: List[str]) -> List[TickerData]:
         """Get quotes for multiple symbols."""
         tasks = [self.get_quote(s) for s in symbols]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return [r for r in results if isinstance(r, TickerData)]
-    
+
     async def get_ohlc(
         self,
         symbol: str,
@@ -80,7 +99,7 @@ class MarketDataService:
         except Exception as e:
             logger.error("fetch_ohlc_failed", symbol=symbol, error=str(e))
             return []
-    
+
     async def get_option_chain(
         self,
         symbol: str,
@@ -92,7 +111,7 @@ class MarketDataService:
         except Exception as e:
             logger.error("fetch_option_chain_failed", symbol=symbol, error=str(e))
             return []
-    
+
     async def analyze_option_chain(
         self,
         symbol: str,
@@ -103,11 +122,11 @@ class MarketDataService:
             chain_data = await self.get_option_chain(symbol, expiry)
             if not chain_data:
                 return None
-            
+
             # Get spot price
             quote = await self.get_quote(symbol)
             spot_price = quote.price if quote else 25000
-            
+
             # Get expiry date
             expiry_date = datetime.utcnow()
             if expiry:
@@ -118,13 +137,13 @@ class MarketDataService:
                 if days_until_friday == 0:
                     days_until_friday = 7
                 expiry_date = datetime.utcnow() + timedelta(days=days_until_friday)
-            
+
             analyzer = OptionChainAnalyzer(spot_price, expiry_date)
             return analyzer.analyze(chain_data)
         except Exception as e:
             logger.error("analyze_option_chain_failed", symbol=symbol, error=str(e))
             return None
-    
+
     async def get_market_insight(
         self,
         symbol: str,
@@ -137,25 +156,23 @@ class MarketDataService:
             ohlc_data = await self.get_ohlc(symbol, interval, limit)
             if not ohlc_data or len(ohlc_data) < 50:
                 return None
-            
+
             # Extract price arrays
             closes = [c.close for c in ohlc_data]
             highs = [c.high for c in ohlc_data]
             lows = [c.low for c in ohlc_data]
             volumes = [c.volume for c in ohlc_data]
-            
+
             # Get option chain analysis
             option_chain = await self.analyze_option_chain(symbol)
-            
+
             # Generate insight
             engine = AIMarketEngine(symbol)
-            return engine.analyze(
-                closes, highs, lows, closes, volumes, option_chain
-            )
+            return engine.analyze(closes, highs, lows, closes, volumes, option_chain)
         except Exception as e:
             logger.error("get_market_insight_failed", symbol=symbol, error=str(e))
             return None
-    
+
     async def search_symbols(self, query: str) -> List[Dict[str, str]]:
         """Search for symbols."""
         try:
@@ -163,7 +180,7 @@ class MarketDataService:
         except Exception as e:
             logger.error("search_symbols_failed", query=query, error=str(e))
             return []
-    
+
     def clear_cache(self):
         """Clear the quote cache."""
         self._quote_cache.clear()

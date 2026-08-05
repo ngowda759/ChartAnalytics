@@ -6,7 +6,18 @@ import structlog
 import time
 
 from app.core.config import settings
-from app.api import market, options, indicators, scanner, journal, strategies, ai, risk, alerts, auth
+from app.api import (
+    market,
+    options,
+    indicators,
+    scanner,
+    journal,
+    strategies,
+    ai,
+    risk,
+    alerts,
+    auth,
+)
 
 # Configure structured logging
 structlog.configure(
@@ -25,12 +36,12 @@ logger = structlog.get_logger()
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     logger.info("application_startup", environment=settings.ENVIRONMENT)
-    
+
     # Initialize services
     # await initialize_services()
-    
+
     yield
-    
+
     logger.info("application_shutdown")
     # await cleanup_services()
 
@@ -58,20 +69,20 @@ app.add_middleware(
 async def log_requests(request: Request, call_next):
     """Log all requests"""
     start_time = time.time()
-    
+
     logger.info(
         "request_started",
         method=request.method,
         path=request.url.path,
         client=request.client.host if request.client else None,
     )
-    
+
     try:
         response = await call_next(request)
-        
+
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
-        
+
         logger.info(
             "request_completed",
             method=request.method,
@@ -79,7 +90,7 @@ async def log_requests(request: Request, call_next):
             status_code=response.status_code,
             process_time=process_time,
         )
-        
+
         return response
     except Exception as e:
         logger.error(
@@ -100,7 +111,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         error=str(exc),
         error_type=type(exc).__name__,
     )
-    
+
     return JSONResponse(
         status_code=500,
         content={

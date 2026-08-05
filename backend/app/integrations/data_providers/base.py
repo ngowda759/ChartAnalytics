@@ -1,4 +1,5 @@
 """Base data provider interface for market data."""
+
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 @dataclass
 class TickerData:
     """Standardized ticker data from any provider."""
+
     symbol: str
     name: str
     price: float
@@ -26,6 +28,7 @@ class TickerData:
 @dataclass
 class OHLCData:
     """OHLC candle data."""
+
     timestamp: datetime
     open: float
     high: float
@@ -37,6 +40,7 @@ class OHLCData:
 @dataclass
 class OptionChainData:
     """Option chain data for a symbol."""
+
     symbol: str
     expiry_date: datetime
     strike: float
@@ -54,23 +58,23 @@ class OptionChainData:
 
 class BaseDataProvider(ABC):
     """Abstract base class for market data providers."""
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """Provider name."""
         pass
-    
+
     @abstractmethod
     async def get_quote(self, symbol: str) -> Optional[TickerData]:
         """Get real-time quote for a symbol."""
         pass
-    
+
     @abstractmethod
     async def get_quotes(self, symbols: List[str]) -> List[TickerData]:
         """Get quotes for multiple symbols."""
         pass
-    
+
     @abstractmethod
     async def get_ohlc(
         self,
@@ -82,7 +86,7 @@ class BaseDataProvider(ABC):
     ) -> List[OHLCData]:
         """Get OHLC data for charting."""
         pass
-    
+
     @abstractmethod
     async def get_option_chain(
         self,
@@ -91,12 +95,12 @@ class BaseDataProvider(ABC):
     ) -> List[OptionChainData]:
         """Get option chain data."""
         pass
-    
+
     @abstractmethod
     async def search_symbols(self, query: str) -> List[Dict[str, str]]:
         """Search for symbols."""
         pass
-    
+
     async def is_available(self) -> bool:
         """Check if provider is available."""
         try:
