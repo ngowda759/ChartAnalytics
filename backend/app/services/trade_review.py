@@ -147,8 +147,10 @@ class TradeReviewService:
         reviews.extend(psych_reviews)
 
         # Calculate overall score
-        overall_score = (entry_score * 0.25 + exit_score * 0.25 +
-                        risk_score * 0.25 + psychology_score * 0.25)
+        overall_score = (
+            entry_score * 0.25 + exit_score * 0.25 +
+            risk_score * 0.25 + psychology_score * 0.25
+        )
 
         # Generate summary and key improvements
         summary = self._generate_summary(trade_id, overall_score, pnl)
