@@ -3,9 +3,6 @@
   "outputDirectory": ".next",
   "framework": "nextjs",
   "regions": ["bom1"],
-  "env": {
-    "NEXT_PUBLIC_API_URL": "@api_url"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
@@ -14,12 +11,6 @@
         { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
         { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
       ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "${BACKEND_URL}/api/:path*"
     }
   ]
 }
