@@ -17,7 +17,6 @@ flower==2.0.1
 # Validation
 pydantic==2.7.0
 pydantic-settings==2.2.0
-zod==3.23.0
 
 # AI/ML
 openai==1.30.0
