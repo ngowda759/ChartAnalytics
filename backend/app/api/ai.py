@@ -19,16 +19,16 @@ router = APIRouter()
 async def get_market_insight(symbol: str):
     """Get AI-powered market insight"""
     logger.info("generating_market_insight", symbol=symbol)
-    
+
     trends = ["bullish", "bearish", "neutral"]
     trend = random.choice(trends)
-    
+
     descriptions = {
         "bullish": "The index shows strong buying interest with momentum indicators supporting higher levels. Watch for continuation above key resistance.",
         "bearish": "Selling pressure persists with technical indicators suggesting further downside. Maintain caution and respect support levels.",
         "neutral": "Market consolidating in a range with no clear directional bias. Consider waiting for a breakout before positioning.",
     }
-    
+
     return AIInsight(
         id=f"insight_{symbol}_{datetime.utcnow().timestamp()}",
         symbol=symbol,
@@ -47,13 +47,13 @@ async def get_market_insight(symbol: str):
 async def get_all_insights(limit: int = Query(10, ge=1, le=50)):
     """Get latest AI insights"""
     logger.info("fetching_insights", limit=limit)
-    
+
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK"]
     insights = []
-    
+
     for symbol in symbols[:limit]:
         insights.append(await get_market_insight(symbol))
-    
+
     return insights
 
 
@@ -64,18 +64,30 @@ async def analyze_chart(
 ):
     """Analyze uploaded chart image"""
     logger.info("analyzing_chart", symbol=symbol)
-    
+
     patterns = [
-        {"type": "Higher Low", "confidence": round(random.uniform(65, 85), 1), "description": "Forming higher lows suggesting bullish reversal"},
-        {"type": "Support Test", "confidence": round(random.uniform(70, 90), 1), "description": "Testing previous support level"},
-        {"type": "Range Bound", "confidence": round(random.uniform(60, 80), 1), "description": "Consolidating within a range"},
+        {
+            "type": "Higher Low",
+            "confidence": round(random.uniform(65, 85), 1),
+            "description": "Forming higher lows suggesting bullish reversal",
+        },
+        {
+            "type": "Support Test",
+            "confidence": round(random.uniform(70, 90), 1),
+            "description": "Testing previous support level",
+        },
+        {
+            "type": "Range Bound",
+            "confidence": round(random.uniform(60, 80), 1),
+            "description": "Consolidating within a range",
+        },
     ]
-    
+
     spot_price = 24567.85
     entry = spot_price * (1 + random.uniform(-0.005, 0.005))
     stop_loss = entry * (1 - random.uniform(0.01, 0.02))
     target = entry * (1 + random.uniform(0.02, 0.04))
-    
+
     return ChartAnalysis(
         id=f"chart_{datetime.utcnow().timestamp()}",
         symbol=symbol,
@@ -99,13 +111,13 @@ async def analyze_chart(
 async def chat(message: ChatMessage):
     """AI Chat Assistant"""
     logger.info("chat_message", role=message.role)
-    
+
     responses = {
         "bullish": "Based on the current market conditions, the outlook appears positive. Key indicators like EMA crossovers and RSI suggest bullish momentum. However, always remember this is educational analysis, not financial advice. Consider your risk tolerance and always use proper position sizing.",
         "bearish": "Technical analysis suggests caution in the current market environment. Multiple indicators are showing bearish signals. This could be a good time to review your positions and ensure proper risk management. Remember, this is educational content only.",
         "neutral": "The market is showing mixed signals with no clear directional bias. This might be a good time to stay on the sidelines or reduce position sizes until there's more clarity. Always trade with a plan and defined risk parameters.",
     }
-    
+
     return ChatResponse(
         message={
             "id": f"msg_{datetime.utcnow().timestamp()}",
@@ -113,5 +125,9 @@ async def chat(message: ChatMessage):
             "content": random.choice(list(responses.values())),
             "timestamp": datetime.utcnow(),
         },
-        sources=["Technical Analysis Principles", "Market Psychology Guide", "Risk Management Best Practices"],
+        sources=[
+            "Technical Analysis Principles",
+            "Market Psychology Guide",
+            "Risk Management Best Practices",
+        ],
     )

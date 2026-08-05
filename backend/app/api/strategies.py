@@ -20,7 +20,7 @@ router = APIRouter()
 async def get_strategies(user_id: str = "user_1"):
     """Get user's strategies"""
     logger.info("fetching_strategies", user_id=user_id)
-    
+
     return [
         Strategy(
             id="strat_1",
@@ -51,7 +51,7 @@ async def get_strategies(user_id: str = "user_1"):
 async def get_strategy(strategy_id: str):
     """Get a specific strategy"""
     logger.info("fetching_strategy", strategy_id=strategy_id)
-    
+
     return Strategy(
         id=strategy_id,
         user_id="user_1",
@@ -69,7 +69,7 @@ async def get_strategy(strategy_id: str):
 async def create_strategy(data: StrategyCreate, user_id: str = "user_1"):
     """Create a new strategy"""
     logger.info("creating_strategy", user_id=user_id)
-    
+
     return Strategy(
         id=f"strat_{random.randint(100, 999)}",
         user_id=user_id,
@@ -87,7 +87,7 @@ async def create_strategy(data: StrategyCreate, user_id: str = "user_1"):
 async def backtest_strategy(strategy_id: str, params: BacktestParams):
     """Run backtest on a strategy"""
     logger.info("running_backtest", strategy_id=strategy_id)
-    
+
     return BacktestResult(
         strategy_id=strategy_id,
         period={"start_date": params.start_date, "end_date": params.end_date},

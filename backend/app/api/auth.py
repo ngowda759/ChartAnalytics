@@ -30,22 +30,24 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 MOCK_USERS_DB = {}
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 async def register(user_data: UserCreate):
     """Register a new user"""
     logger.info("user_registration_attempt", email=user_data.email)
-    
+
     # Check if user exists
     if user_data.email in MOCK_USERS_DB:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-    
+
     # Create user
     user_id = f"user_{len(MOCK_USERS_DB) + 1}"
     hashed_password = get_password_hash(user_data.password)
-    
+
     user = {
         "id": user_id,
         "email": user_data.email,
@@ -81,11 +83,11 @@ async def register(user_data: UserCreate):
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow(),
     }
-    
+
     MOCK_USERS_DB[user_data.email] = user
-    
+
     logger.info("user_registered", user_id=user_id, email=user_data.email)
-    
+
     return UserResponse(**{k: v for k, v in user.items() if k != "hashed_password"})
 
 
@@ -93,21 +95,23 @@ async def register(user_data: UserCreate):
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """Login and get access token"""
     logger.info("login_attempt", username=form_data.username)
-    
+
     user = MOCK_USERS_DB.get(form_data.username)
-    
+
     if not user or not verify_password(form_data.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    access_token = create_access_token(data={"sub": user["email"], "user_id": user["id"]})
+
+    access_token = create_access_token(
+        data={"sub": user["email"], "user_id": user["id"]}
+    )
     refresh_token = create_refresh_token(data={"sub": user["email"]})
-    
+
     logger.info("login_success", user_id=user["id"])
-    
+
     return Token(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -119,25 +123,25 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 async def refresh_token(refresh_token: str):
     """Refresh access token"""
     payload = decode_token(refresh_token)
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
         )
-    
+
     email = payload.get("sub")
     user = MOCK_USERS_DB.get(email)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    
+
     access_token = create_access_token(data={"sub": email, "user_id": user["id"]})
     new_refresh_token = create_refresh_token(data={"sub": email})
-    
+
     return Token(
         access_token=access_token,
         refresh_token=new_refresh_token,
@@ -149,7 +153,7 @@ async def refresh_token(refresh_token: str):
 async def request_password_reset(data: PasswordResetRequest):
     """Request password reset"""
     logger.info("password_reset_requested", email=data.email)
-    
+
     # In production, send email with reset link
     # For now, just return success
     return {"message": "Password reset email sent if account exists"}
@@ -159,28 +163,28 @@ async def request_password_reset(data: PasswordResetRequest):
 async def reset_password(data: PasswordReset):
     """Reset password with token"""
     logger.info("password_reset_attempt")
-    
+
     payload = decode_token(data.token)
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired token",
         )
-    
+
     email = payload.get("sub")
     user = MOCK_USERS_DB.get(email)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
+
     user["hashed_password"] = get_password_hash(data.new_password)
     user["updated_at"] = datetime.utcnow()
-    
+
     logger.info("password_reset_success", user_id=user["id"])
-    
+
     return {"message": "Password reset successful"}
 
 
@@ -188,20 +192,20 @@ async def reset_password(data: PasswordReset):
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Get current user profile"""
     payload = decode_token(token)
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
-    
+
     email = payload.get("sub")
     user = MOCK_USERS_DB.get(email)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
+
     return UserResponse(**{k: v for k, v in user.items() if k != "hashed_password"})

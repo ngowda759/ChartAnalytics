@@ -19,7 +19,7 @@ router = APIRouter()
 async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
     """Get user's alerts"""
     logger.info("fetching_alerts", user_id=user_id)
-    
+
     alerts = [
         Alert(
             id="alert_1",
@@ -52,10 +52,10 @@ async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
             created_at=datetime.utcnow(),
         ),
     ]
-    
+
     if is_active is not None:
         alerts = [a for a in alerts if a.is_active == is_active]
-    
+
     return alerts
 
 
@@ -63,7 +63,7 @@ async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
 async def create_alert(data: AlertCreate, user_id: str = "user_1"):
     """Create a new alert"""
     logger.info("creating_alert", user_id=user_id, type=data.type)
-    
+
     return Alert(
         id=f"alert_{random.randint(1000, 9999)}",
         user_id=user_id,
@@ -80,7 +80,7 @@ async def create_alert(data: AlertCreate, user_id: str = "user_1"):
 async def update_alert(alert_id: str, updates: AlertUpdate):
     """Update an alert"""
     logger.info("updating_alert", alert_id=alert_id)
-    
+
     return Alert(
         id=alert_id,
         user_id="user_1",
@@ -104,7 +104,7 @@ async def delete_alert(alert_id: str):
 async def get_notifications(user_id: str = "user_1", limit: int = 20):
     """Get recent alert notifications"""
     logger.info("fetching_notifications", user_id=user_id)
-    
+
     notifications = []
     for i in range(min(limit, 10)):
         notifications.append(
@@ -117,7 +117,7 @@ async def get_notifications(user_id: str = "user_1", limit: int = 20):
                 is_read=random.random() > 0.3,
             )
         )
-    
+
     return notifications
 
 

@@ -17,7 +17,6 @@ flower==2.0.1
 # Validation
 pydantic==2.7.0
 pydantic-settings==2.2.0
-zod==3.23.0
 
 # AI/ML
 openai==1.30.0
@@ -37,7 +36,6 @@ scipy==1.13.1
 
 # Technical analysis
 ta==0.10.2
-ta-lib==0.4.34
 
 # Chart analysis
 python-dotenv==1.0.1

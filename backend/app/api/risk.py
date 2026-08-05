@@ -18,11 +18,11 @@ router = APIRouter()
 async def calculate_position_size(data: PositionSizeRequest):
     """Calculate position size based on risk parameters"""
     logger.info("calculating_position_size")
-    
+
     # Position size formula: (Account * Risk%) / (Entry - SL)
     risk_amount = data.account_size * (data.risk_percent / 100)
     price_difference = abs(data.entry_price - data.stop_loss)
-    
+
     if price_difference == 0:
         return PositionSizeResponse(
             quantity=0,
@@ -30,10 +30,10 @@ async def calculate_position_size(data: PositionSizeRequest):
             capital_required=0,
             risk_percent=0,
         )
-    
+
     quantity = int(risk_amount / price_difference)
     capital_required = quantity * data.entry_price
-    
+
     return PositionSizeResponse(
         quantity=quantity,
         risk_amount=round(risk_amount, 2),
@@ -52,7 +52,7 @@ async def calculate_risk(
 ):
     """Calculate complete risk metrics for a trade"""
     logger.info("calculating_risk")
-    
+
     if trade_type.lower() == "long":
         max_loss = (entry_price - stop_loss) * quantity
         max_profit = (target - entry_price) * quantity
@@ -61,7 +61,7 @@ async def calculate_risk(
         max_loss = (stop_loss - entry_price) * quantity
         max_profit = (entry_price - target) * quantity
         breakeven = entry_price
-    
+
     return RiskCalculation(
         position_size={
             "quantity": quantity,
@@ -79,10 +79,10 @@ async def calculate_risk(
 async def get_daily_limit(user_id: str = "user_1"):
     """Get current daily loss limit status"""
     logger.info("fetching_daily_limit", user_id=user_id)
-    
+
     max_loss = 5000
     current_loss = random.uniform(0, max_loss * 0.8)
-    
+
     return DailyLimit(
         date=datetime.utcnow(),
         max_loss=max_loss,
