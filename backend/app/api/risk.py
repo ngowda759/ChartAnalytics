@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
+from datetime import datetime
 import random
 import structlog
 
@@ -90,6 +91,3 @@ async def get_daily_limit(user_id: str = "user_1"):
         remaining_loss=round(max_loss - current_loss, 2),
         is_limit_hit=current_loss >= max_loss,
     )
-
-
-from datetime import datetime

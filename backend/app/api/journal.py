@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import structlog
 
@@ -256,6 +256,3 @@ async def get_performance_metrics(user_id: str = "user_1"):
             ),
         ],
     )
-
-
-from datetime import timedelta

@@ -424,3 +424,72 @@ export interface AlertNotification {
   timestamp: Date;
   isRead: boolean;
 }
+
+// Trade Review types
+export interface TradeReview {
+  tradeId: string;
+  overallScore: number;
+  entryScore: number;
+  exitScore: number;
+  riskScore: number;
+  psychologyScore: number;
+  reviews: TradeReviewItem[];
+  summary: string;
+  keyImprovements: string[];
+}
+
+export interface TradeReviewItem {
+  tradeId: string;
+  category: 'entry' | 'exit' | 'risk' | 'psychology' | 'strategy';
+  severity: 'positive' | 'neutral' | 'improvement' | 'critical';
+  title: string;
+  description: string;
+  recommendation: string;
+  scoreImpact: number;
+}
+
+// Chart Analysis types
+export interface ChartAnalysisResult {
+  symbol: string;
+  patterns: DetectedPattern[];
+  levels: ChartLevels;
+  trend: 'bullish' | 'bearish' | 'neutral';
+  momentum: string;
+  volatility: string;
+  volumeProfile: string;
+  bias: 'bullish' | 'bearish' | 'neutral';
+  confidence: number;
+  setup?: TradeSetup;
+  summary: string;
+  educationalNotes: string[];
+}
+
+export interface DetectedPattern {
+  type: string;
+  direction: 'bullish' | 'bearish' | 'neutral';
+  confidence: 'low' | 'medium' | 'high';
+  description: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+export interface ChartLevels {
+  support: number[];
+  resistance: number[];
+  pivot: number;
+  s1: number;
+  r1: number;
+  s2: number;
+  r2: number;
+}
+
+export interface TradeSetup {
+  entry: number;
+  stopLoss: number;
+  target1: number;
+  target2: number;
+  target3: number;
+  riskReward1: number;
+  riskReward2: number;
+  riskReward3: number;
+}
