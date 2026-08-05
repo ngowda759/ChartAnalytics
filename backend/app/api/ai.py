@@ -10,6 +10,8 @@ from app.schemas.ai import (
     ChatMessage,
     ChatResponse,
 )
+from app.services.trade_review import trade_review_service
+from app.services.chart_analysis import chart_analysis_service
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -130,4 +132,151 @@ async def chat(message: ChatMessage):
             "Market Psychology Guide",
             "Risk Management Best Practices",
         ],
+    )
+
+
+# Pydantic models for trade review request/response
+from pydantic import BaseModel
+
+
+class TradeReviewRequest(BaseModel):
+    trade_id: str
+    entry_price: float
+    exit_price: Optional[float] = None
+    stop_loss: float
+    target: float
+    quantity: int
+    trade_type: str  # "long" or "short"
+    strategy: str
+    pnl: Optional[float] = None
+    holding_period_minutes: Optional[int] = None
+
+
+class TradeReviewResponse(BaseModel):
+    trade_id: str
+    overall_score: float
+    entry_score: float
+    exit_score: float
+    risk_score: float
+    psychology_score: float
+    reviews: List[dict]
+    summary: str
+    key_improvements: List[str]
+
+
+@router.post("/review-trade", response_model=TradeReviewResponse)
+async def review_trade(request: TradeReviewRequest):
+    """AI-powered trade review with educational insights"""
+    logger.info("reviewing_trade", trade_id=request.trade_id)
+
+    report = trade_review_service.analyze_trade(
+        trade_id=request.trade_id,
+        entry_price=request.entry_price,
+        exit_price=request.exit_price,
+        stop_loss=request.stop_loss,
+        target=request.target,
+        quantity=request.quantity,
+        trade_type=request.trade_type,
+        strategy=request.strategy,
+        pnl=request.pnl,
+        holding_period_minutes=request.holding_period_minutes,
+    )
+
+    return TradeReviewResponse(
+        trade_id=report.trade_id,
+        overall_score=report.overall_score,
+        entry_score=report.entry_score,
+        exit_score=report.exit_score,
+        risk_score=report.risk_score,
+        psychology_score=report.psychology_score,
+        reviews=[r.to_dict() for r in report.reviews],
+        summary=report.summary,
+        key_improvements=report.key_improvements,
+    )
+
+
+class ChartAnalysisRequest(BaseModel):
+    symbol: str
+    highs: List[float]
+    lows: List[float]
+    closes: List[float]
+    volumes: List[int]
+    timestamps: List[str]
+
+
+class ChartAnalysisResponse(BaseModel):
+    symbol: str
+    patterns: List[dict]
+    levels: dict
+    trend: str
+    momentum: str
+    volatility: str
+    volume_profile: str
+    bias: str
+    confidence: float
+    setup: Optional[dict]
+    summary: str
+    educational_notes: List[str]
+
+
+@router.post("/analyze-patterns", response_model=ChartAnalysisResponse)
+async def analyze_patterns(request: ChartAnalysisRequest):
+    """Analyze chart patterns and generate trade setups"""
+    logger.info("analyzing_patterns", symbol=request.symbol)
+
+    result = chart_analysis_service.analyze_chart(
+        symbol=request.symbol,
+        highs=request.highs,
+        lows=request.lows,
+        closes=request.closes,
+        volumes=request.volumes,
+        timestamps=request.timestamps,
+    )
+
+    patterns_data = [
+        {
+            "type": p.pattern_type.value,
+            "direction": p.direction.value,
+            "confidence": p.confidence.value,
+            "description": p.description,
+            "start_index": p.start_index,
+            "end_index": p.end_index,
+        }
+        for p in result.patterns
+    ]
+
+    setup_data = None
+    if result.setup:
+        setup_data = {
+            "entry": result.setup.entry,
+            "stop_loss": result.setup.stop_loss,
+            "target_1": result.setup.target_1,
+            "target_2": result.setup.target_2,
+            "target_3": result.setup.target_3,
+            "risk_reward_1": result.setup.risk_reward_1,
+            "risk_reward_2": result.setup.risk_reward_2,
+            "risk_reward_3": result.setup.risk_reward_3,
+        }
+
+    return ChartAnalysisResponse(
+        symbol=request.symbol,
+        patterns=patterns_data,
+        levels={
+            "support": result.levels.support,
+            "resistance": result.levels.resistance,
+            "pivot": result.levels.pivot,
+            "s1": result.levels.s1,
+            "r1": result.levels.r1,
+            "s2": result.levels.s2,
+            "r2": result.levels.r2,
+        },
+        trend=result.trend.value,
+        momentum=result.momentum,
+        volatility=result.volatility,
+        volume_profile=result.volume_profile,
+        bias=result.bias.value,
+        confidence=result.confidence,
+        setup=setup_data,
+        summary=result.summary,
+        educational_notes=result.educational_notes,
     )
