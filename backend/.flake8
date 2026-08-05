@@ -7,4 +7,4 @@ exclude =
     dist,
     .venv,
     venv
-ignore = E203, E402, E501, F401, F403, F841, W503, E741, E128, W504
+ignore = E203, E402, E501, F401, F403, F841, W503, E741, E128, W504, W293
