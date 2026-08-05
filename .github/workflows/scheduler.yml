@@ -1,0 +1,81 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    - cron: '*/5 9-15 * * 1-5'    # Every 5 min during market hours (9 AM - 3:30 PM IST)
+    - cron: '0 9 * * 1-5'          # 9 AM Mon-Fri - pre-market summary
+    - cron: '0 15 * * 1-5'         # 3 PM Mon-Fri - post-market summary
+    - cron: '0 0 * * *'            # Midnight - daily cleanup
+  workflow_dispatch:               # Manual trigger
+
+jobs:
+  market-sync:
+    name: Market Data Sync
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Trigger market sync API
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/market/sync" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+      
+      - name: Sync option chain data
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/options/sync" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+
+  pre-market-summary:
+    name: Pre-Market Summary
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 9 * * 1-5'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Generate pre-market report
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/reports/pre-market" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+      
+      - name: Send Telegram alerts
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/alerts/send-daily" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+
+  post-market-summary:
+    name: Post-Market Summary
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 15 * * 1-5'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Generate post-market report
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/reports/post-market" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+      
+      - name: Update daily metrics
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/metrics/daily-update" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+
+  cleanup:
+    name: Daily Cleanup
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 0 * * *'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Clean old cache
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/admin/cleanup" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
+      
+      - name: Archive old logs
+        run: |
+          curl -X POST "${{ secrets.API_BASE_URL }}/api/v1/admin/archive-logs" \
+            -H "Authorization: Bearer ${{ secrets.API_CRON_SECRET }}"
