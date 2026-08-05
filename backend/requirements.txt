@@ -36,7 +36,6 @@ scipy==1.13.1
 
 # Technical analysis
 ta==0.10.2
-ta-lib==0.4.34
 
 # Chart analysis
 python-dotenv==1.0.1
