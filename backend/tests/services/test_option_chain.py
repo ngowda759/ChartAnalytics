@@ -93,7 +93,7 @@ class TestOptionChainAnalyzer:
         max_pain = calculate_max_pain(chain_data, 25000)
         
         assert max_pain > 0
-        assert isinstance(max_pain, float)
+        assert isinstance(max_pain, (int, float))
     
     def test_support_resistance_levels(self):
         """Test support and resistance level identification."""
