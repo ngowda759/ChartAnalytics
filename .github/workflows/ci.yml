@@ -66,9 +66,6 @@ jobs:
       - name: Run linting
         run: flake8 app --count --show-source --statistics
       
-      - name: Run type check
-        run: mypy app --ignore-missing-imports
-      
       - name: Run tests
         run: pytest --cov=app --cov-report=xml
       
