@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, LineData, Time } from 'lightweight-charts';
+import { useEffect, useRef, useState } from 'react';
+import type { IChartApi, ISeriesApi, CandlestickData, HistogramData, Time } from 'lightweight-charts';
 
 interface MarketChartProps {
   symbol: string;
@@ -12,9 +12,20 @@ export function MarketChart({ symbol }: MarketChartProps) {
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  const [ChartComponent, setChartComponent] = useState<any>(null);
 
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    setIsClient(true);
+    import('lightweight-charts').then((mod) => {
+      setChartComponent(() => mod.createChart);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!chartContainerRef.current || !isClient || !ChartComponent) return;
+
+    const createChart = ChartComponent;
 
     // Create chart
     const chart = createChart(chartContainerRef.current, {
@@ -85,7 +96,15 @@ export function MarketChart({ symbol }: MarketChartProps) {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [symbol]);
+  }, [symbol, isClient, ChartComponent]);
+
+  if (!isClient) {
+    return (
+      <div className="flex h-[300px] items-center justify-center bg-muted/20">
+        <div className="animate-pulse text-muted-foreground">Loading chart...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -106,7 +125,7 @@ export function MarketChart({ symbol }: MarketChartProps) {
 
 function generateMockData(symbol: string) {
   const candles: CandlestickData<Time>[] = [];
-  const volume: { time: Time; value: number; color: string }[] = [];
+  const volume: HistogramData<Time>[] = [];
   
   const basePrice = symbol === 'NIFTY' ? 24500 : 52400;
   const volatility = symbol === 'NIFTY' ? 50 : 100;
