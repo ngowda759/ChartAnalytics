@@ -8,6 +8,7 @@ import structlog
 
 from app.integrations.data_providers.mock_provider import MockDataProvider
 from app.integrations.data_providers.angel_one_provider import AngelOneProvider, create_angel_one_provider
+from app.integrations.data_providers.kite_connect_provider import KiteConnectProvider, create_kite_connect_provider
 from app.integrations.data_providers.base import TickerData, OHLCData, OptionChainData, BaseDataProvider
 from app.services.ai_market_engine import AIMarketEngine, MarketInsight
 from app.services.option_chain import OptionChainAnalyzer, OptionChainAnalysis
@@ -196,8 +197,15 @@ def get_market_service() -> MarketDataService:
     """Get or create market service instance."""
     global _market_service
     if _market_service is None:
-        # Check if Angel One is enabled
-        if settings.ANGEL_ONE_ENABLED and settings.ANGEL_ONE_API_KEY:
+        # Priority: Kite Connect > Angel One > Mock
+        if settings.KITE_CONNECT_ENABLED and settings.KITE_CONNECT_API_KEY:
+            logger.info("using_kite_connect_provider")
+            provider = create_kite_connect_provider(
+                api_key=settings.KITE_CONNECT_API_KEY,
+                access_token=settings.KITE_CONNECT_ACCESS_TOKEN,
+            )
+            _market_service = MarketDataService(provider=provider)
+        elif settings.ANGEL_ONE_ENABLED and settings.ANGEL_ONE_API_KEY:
             logger.info("using_angel_one_provider")
             provider = create_angel_one_provider(
                 api_key=settings.ANGEL_ONE_API_KEY,
@@ -207,6 +215,6 @@ def get_market_service() -> MarketDataService:
             )
             _market_service = MarketDataService(provider=provider)
         else:
-            logger.info("using_mock_provider", reason="angel_one_disabled")
+            logger.info("using_mock_provider", reason="no_live_provider_configured")
             _market_service = MarketDataService(provider=MockDataProvider())
     return _market_service
