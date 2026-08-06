@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     ANGEL_ONE_TOTP_SECRET: str = ""  # For 2FA authentication
     ANGEL_ONE_ENABLED: bool = False
 
+    # Zerodha Kite Connect (Real-time market data)
+    KITE_CONNECT_API_KEY: str = ""
+    KITE_CONNECT_ACCESS_TOKEN: str = ""
+    KITE_CONNECT_ENABLED: bool = False
+
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
 
