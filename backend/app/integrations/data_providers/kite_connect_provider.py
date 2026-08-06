@@ -11,6 +11,7 @@ import structlog
 import httpx
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
+from dataclasses import dataclass
 
 from .base import BaseDataProvider, TickerData, OHLCData, OptionChainData
 
@@ -288,7 +289,7 @@ class KiteConnectProvider(BaseDataProvider):
                         
                         try:
                             expiry_date = datetime.strptime(expiry_str, "%d-%b-%Y")
-                        except:
+                        except Exception:
                             continue
                         
                         if expiry and expiry not in expiry_str:
