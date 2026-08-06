@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     NSE_API_URL: str = "https://api.nseindia.com"
     YAHOO_FINANCE_URL: str = "https://query1.finance.yahoo.com"
 
+    # Angel One SmartAPI (Real-time market data)
+    ANGEL_ONE_API_KEY: str = ""
+    ANGEL_ONE_CLIENT_CODE: str = ""
+    ANGEL_ONE_PASSWORD: str = ""
+    ANGEL_ONE_TOTP_SECRET: str = ""  # For 2FA authentication
+    ANGEL_ONE_ENABLED: bool = False
+
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
 

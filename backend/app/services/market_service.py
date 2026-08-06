@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 import structlog
 
 from app.integrations.data_providers.mock_provider import MockDataProvider
-from app.integrations.data_providers.base import TickerData, OHLCData, OptionChainData
+from app.integrations.data_providers.angel_one_provider import AngelOneProvider, create_angel_one_provider
+from app.integrations.data_providers.base import TickerData, OHLCData, OptionChainData, BaseDataProvider
 from app.services.ai_market_engine import AIMarketEngine, MarketInsight
 from app.services.option_chain import OptionChainAnalyzer, OptionChainAnalysis
+from app.core.config import settings
 
 logger = structlog.get_logger()
 
@@ -27,7 +29,7 @@ class CachedQuote:
 class MarketDataService:
     """Service for fetching and caching market data."""
 
-    provider: MockDataProvider = field(default_factory=MockDataProvider)
+    provider: BaseDataProvider = field(default_factory=lambda: MockDataProvider())
     _quote_cache: Dict[str, CachedQuote] = field(default_factory=dict)
     _cache_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -194,5 +196,17 @@ def get_market_service() -> MarketDataService:
     """Get or create market service instance."""
     global _market_service
     if _market_service is None:
-        _market_service = MarketDataService()
+        # Check if Angel One is enabled
+        if settings.ANGEL_ONE_ENABLED and settings.ANGEL_ONE_API_KEY:
+            logger.info("using_angel_one_provider")
+            provider = create_angel_one_provider(
+                api_key=settings.ANGEL_ONE_API_KEY,
+                client_code=settings.ANGEL_ONE_CLIENT_CODE,
+                password=settings.ANGEL_ONE_PASSWORD,
+                totp_secret=settings.ANGEL_ONE_TOTP_SECRET,
+            )
+            _market_service = MarketDataService(provider=provider)
+        else:
+            logger.info("using_mock_provider", reason="angel_one_disabled")
+            _market_service = MarketDataService(provider=MockDataProvider())
     return _market_service
