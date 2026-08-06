@@ -15,10 +15,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  PanelLeftClose,
-  PanelLeft,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -41,26 +39,10 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
 
-  // When hidden, show only a toggle button
-  if (isHidden) {
-    return (
-      <aside className="flex flex-col border-r bg-card">
-        <div className="flex items-center justify-center p-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsHidden(false)}
-            className="h-10 w-10"
-            title="Show Sidebar"
-          >
-            <PanelLeft className="h-5 w-5" />
-          </Button>
-        </div>
-      </aside>
-    );
-  }
+  const handleToggle = useCallback(() => {
+    setIsCollapsed(prev => !prev);
+  }, []);
 
   return (
     <aside
@@ -75,29 +57,18 @@ export function Sidebar() {
             AI Trading
           </h1>
         )}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsHidden(true)}
-            className="h-8 w-8"
-            title="Hide sidebar"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="h-8 w-8"
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleToggle}
+          className="h-8 w-8"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </Button>
       </div>
 
       <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
