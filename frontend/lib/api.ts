@@ -1,12 +1,16 @@
 // API Client for ChartAnalytics Backend
 
 const getApiBaseUrl = () => {
-  if (typeof window !== 'undefined') {
-    // Client-side: use relative URL or configured API
-    return process.env.NEXT_PUBLIC_API_URL || '/api/v1';
+  // Use environment variable if set, otherwise use relative URL for proxy
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
   }
-  // Server-side fallback
-  return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+  // Fallback to relative URL (works with Next.js API proxy)
+  if (typeof window !== 'undefined') {
+    return '/api/v1';
+  }
+  // Server-side fallback for SSR
+  return 'http://localhost:8000/api/v1';
 };
 
 const API_BASE_URL = getApiBaseUrl();
