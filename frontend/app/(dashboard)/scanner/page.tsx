@@ -205,7 +205,7 @@ export default function ScannerPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Scan Results ({filteredResults.length})</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-2 sm:p-4">
           {loading ? (
             <div className="flex justify-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -217,36 +217,36 @@ export default function ScannerPage() {
               {filteredResults.map((r) => (
                 <div
                   key={r.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 sm:p-4 border rounded-lg hover:bg-muted/50"
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="flex flex-col">
                       <span className="font-semibold">{r.symbol}</span>
-                      <span className="text-xs text-muted-foreground">{r.name}</span>
+                      <span className="text-xs text-muted-foreground hidden sm:block">{r.name}</span>
                     </div>
-                    <Badge variant="outline">{getScanTypeLabel(r.scan_type)}</Badge>
+                    <Badge variant="outline" className="text-xs">{getScanTypeLabel(r.scan_type)}</Badge>
                   </div>
-                  <div className="flex items-center gap-6">
+                  <div className="flex items-center gap-3 sm:gap-6">
                     <div className="text-right">
-                      <p className="font-semibold">₹{formatINR(r.price)}</p>
-                      <p className={`text-sm ${r.change_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <p className="font-semibold text-sm">₹{formatINR(r.price)}</p>
+                      <p className={`text-xs ${r.change_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {r.change_percent >= 0 ? '+' : ''}{r.change_percent.toFixed(2)}%
                       </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Vol Ratio</p>
-                      <p className="font-semibold">{r.volume_ratio.toFixed(1)}x</p>
+                    <div className="text-right hidden sm:block">
+                      <p className="text-xs text-muted-foreground">Vol</p>
+                      <p className="font-semibold text-sm">{r.volume_ratio.toFixed(1)}x</p>
                     </div>
-                    <div className="text-right w-20">
-                      <p className="text-xs text-muted-foreground">Confidence</p>
-                      <div className="flex items-center gap-2">
+                    <div className="text-right w-16 sm:w-20">
+                      <p className="text-xs text-muted-foreground">Conf</p>
+                      <div className="flex items-center gap-1">
                         <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
                           <div
                             className={`h-full ${r.direction === 'bullish' ? 'bg-green-500' : r.direction === 'bearish' ? 'bg-red-500' : 'bg-gray-500'}`}
                             style={{ width: `${r.confidence}%` }}
                           />
                         </div>
-                        <span className="text-sm font-medium">{r.confidence}%</span>
+                        <span className="text-xs font-medium">{r.confidence}%</span>
                       </div>
                     </div>
                     {getDirectionBadge(r.direction)}

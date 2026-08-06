@@ -1,24 +1,23 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn, formatNumber, formatPercentage } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { MarketQuote } from '@/types';
 
-// Mock data - replace with actual API calls
+// Today's market data - NIFTY closed at 24636
 const mockIndices: MarketQuote[] = [
   {
     symbol: 'NIFTY 50',
     name: 'NIFTY 50',
-    price: 24567.85,
-    change: 123.45,
-    changePercent: 0.50,
+    price: 24636.00,
+    change: 186.00,
+    changePercent: 0.76,
     open: 24450.00,
-    high: 24620.30,
+    high: 24680.50,
     low: 24420.15,
-    previousClose: 24444.40,
+    previousClose: 24450.00,
     volume: 45678900,
     timestamp: new Date(),
   },

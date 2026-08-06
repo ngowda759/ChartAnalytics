@@ -110,16 +110,21 @@ export default function StrategiesPage() {
       )}
 
       {/* Strategy Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {strategies.map((strategy) => (
           <Card key={strategy.id} className={strategy.is_active ? 'border-green-500/50' : ''}>
             <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-lg">{strategy.name}</CardTitle>
-                  <Badge variant={strategy.is_active ? 'default' : 'secondary'} className={strategy.is_active ? 'bg-green-500' : ''}>
-                    {strategy.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
+                <div className="flex flex-col gap-1">
+                  <CardTitle className="text-base sm:text-lg">{strategy.name}</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={strategy.is_active ? 'default' : 'secondary'} className={`text-xs ${strategy.is_active ? 'bg-green-500' : ''}`}>
+                      {strategy.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                    <Badge variant="outline" className="text-xs hidden sm:inline-flex">
+                      {strategyTypes.find(t => t.value === strategy.type)?.label}
+                    </Badge>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
@@ -129,42 +134,39 @@ export default function StrategiesPage() {
                   {strategy.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
               </div>
-              <Badge variant="outline" className={`w-fit bg-${getTypeColor(strategy.type)}-500/10`}>
-                {strategyTypes.find(t => t.value === strategy.type)?.label}
-              </Badge>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{strategy.description}</p>
+              <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{strategy.description}</p>
               
-              <div className="grid grid-cols-3 gap-4 mb-4">
-                <div className="text-center p-3 bg-green-500/10 rounded-lg">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
+                <div className="text-center p-2 sm:p-3 bg-green-500/10 rounded-lg">
                   <p className="text-xs text-muted-foreground mb-1">Win Rate</p>
-                  <p className="text-xl font-bold text-green-600">{strategy.metrics.winRate}%</p>
+                  <p className="text-lg sm:text-xl font-bold text-green-600">{strategy.metrics.winRate}%</p>
                 </div>
-                <div className="text-center p-3 bg-blue-500/10 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Profit Factor</p>
-                  <p className="text-xl font-bold text-blue-600">{strategy.metrics.profitFactor.toFixed(1)}</p>
+                <div className="text-center p-2 sm:p-3 bg-blue-500/10 rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">PF</p>
+                  <p className="text-lg sm:text-xl font-bold text-blue-600">{strategy.metrics.profitFactor.toFixed(1)}</p>
                 </div>
-                <div className="text-center p-3 bg-muted rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Total Trades</p>
-                  <p className="text-xl font-bold">{strategy.metrics.totalTrades}</p>
+                <div className="text-center p-2 sm:p-3 bg-muted rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-1">Trades</p>
+                  <p className="text-lg sm:text-xl font-bold">{strategy.metrics.totalTrades}</p>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between text-sm border-t pt-4">
-                <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm border-t pt-4">
+                <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1">
                     <TrendingUp className="h-4 w-4 text-green-600" />
-                    <span className="text-green-600">{formatINR(strategy.metrics.avgProfit)}</span>
+                    <span className="text-green-600 text-xs sm:text-sm">{formatINR(strategy.metrics.avgProfit)}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <TrendingDown className="h-4 w-4 text-red-600" />
-                    <span className="text-red-600">{formatINR(strategy.metrics.avgLoss)}</span>
+                    <span className="text-red-600 text-xs sm:text-sm">{formatINR(strategy.metrics.avgLoss)}</span>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm">Edit</Button>
-                  <Button variant="outline" size="sm">Backtest</Button>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <Button variant="outline" size="sm" className="flex-1 sm:flex-none">Edit</Button>
+                  <Button variant="outline" size="sm" className="flex-1 sm:flex-none">Backtest</Button>
                 </div>
               </div>
             </CardContent>

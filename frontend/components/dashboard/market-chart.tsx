@@ -20,41 +20,20 @@ interface VolumeData {
   color: string;
 }
 
-// Generate intraday timestamps for NSE market hours (9:15 AM - 3:30 PM IST)
-function getIntradayStartTime(): Date {
-  const now = new Date();
-  // Set to today's date with market open time (9:15 AM IST = 3:45 UTC)
-  const marketOpen = new Date(now);
-  marketOpen.setUTCHours(3, 45, 0, 0);
-  
-  // If market hasn't opened today yet, use today's date
-  // If after market hours, use today
-  // If during weekend, adjust appropriately
-  const day = now.getDay();
-  if (day === 0) { // Sunday
-    marketOpen.setDate(marketOpen.getDate() + 1);
-  } else if (day === 6) { // Saturday
-    marketOpen.setDate(marketOpen.getDate() + 2);
-  }
-  
-  return marketOpen;
-}
-
-function isWithinMarketHours(date: Date): boolean {
-  // IST market hours: 9:15 AM to 3:30 PM
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const totalMinutes = hours * 60 + minutes;
-  
-  // 9:15 = 555, 15:30 = 930
-  return totalMinutes >= 555 && totalMinutes <= 930;
-}
+// NIFTY closing price at 3:30 PM IST
+const NIFTY_CLOSE_PRICE = 24636;
+const NIFTY_OPEN_PRICE = 24450; // Approximate open price
+const BANKNIFTY_CLOSE_PRICE = 52456;
 
 export function MarketChart({ symbol }: MarketChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const [isClient, setIsClient] = useState(false);
-  const [chartInfo, setChartInfo] = useState({ currentPrice: 0, change: 0, changePercent: 0 });
+  const [chartInfo, setChartInfo] = useState({ 
+    currentPrice: symbol === 'NIFTY' ? NIFTY_CLOSE_PRICE : BANKNIFTY_CLOSE_PRICE, 
+    change: symbol === 'NIFTY' ? NIFTY_CLOSE_PRICE - NIFTY_OPEN_PRICE : 0,
+    changePercent: symbol === 'NIFTY' ? ((NIFTY_CLOSE_PRICE - NIFTY_OPEN_PRICE) / NIFTY_OPEN_PRICE) * 100 : 0
+  });
 
   useEffect(() => {
     setIsClient(true);
@@ -153,7 +132,7 @@ export function MarketChart({ symbol }: MarketChartProps) {
         <span className={`font-medium ${chartInfo.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {chartInfo.change >= 0 ? '+' : ''}{chartInfo.change.toFixed(2)} ({chartInfo.changePercent >= 0 ? '+' : ''}{chartInfo.changePercent.toFixed(2)}%)
         </span>
-        <span className="text-xs text-muted-foreground ml-auto">5 min | 9:15 AM - 3:30 PM IST</span>
+        <span className="text-xs text-muted-foreground ml-auto">Closed 3:30 PM IST</span>
       </div>
       <div ref={chartContainerRef} className="w-full" />
       <div className="flex items-center justify-end gap-4 text-xs">
@@ -174,33 +153,35 @@ function generateIntradayData(symbol: string) {
   const candles: CandleData[] = [];
   const volume: VolumeData[] = [];
   
-  const basePrice = symbol === 'NIFTY' ? 24500 : 52400;
-  const volatility = symbol === 'NIFTY' ? 50 : 100;
+  const closePrice = symbol === 'NIFTY' ? NIFTY_CLOSE_PRICE : BANKNIFTY_CLOSE_PRICE;
+  const openPrice = symbol === 'NIFTY' ? NIFTY_OPEN_PRICE : closePrice - 200;
+  const volatility = symbol === 'NIFTY' ? 30 : 80;
   
-  // Get start time for market open (9:15 AM IST)
-  const marketOpen = getIntradayStartTime();
-  let currentPrice = basePrice;
+  // Market open time (9:15 AM IST = 3:45 UTC)
+  const marketOpen = new Date();
+  marketOpen.setUTCHours(3, 45, 0, 0);
   
-  // Generate 5-minute candles from market open
-  const now = new Date();
-  const marketClose = new Date(marketOpen);
-  marketClose.setHours(15, 30, 0, 0); // 3:30 PM IST
-  
-  // If current time is after market close, show full session
-  // Otherwise show candles up to current time
-  const endTime = now > marketClose ? marketClose : now;
-  
-  // Generate 75 candles (5 min candles from 9:15 to 3:30 = 75 candles)
+  let currentPrice = openPrice;
   let candleTime = new Date(marketOpen);
   
-  while (candleTime <= endTime) {
+  // Generate 75 candles (5 min candles from 9:15 to 3:30)
+  for (let i = 0; i < 75; i++) {
     const timestamp = Math.floor(candleTime.getTime() / 1000);
     
-    const change = (Math.random() - 0.5) * volatility;
+    // Make the last candle close at the close price
+    let targetClose: number;
+    if (i === 74) {
+      targetClose = closePrice;
+    } else {
+      const progress = i / 74;
+      const priceProgress = (closePrice - openPrice) * progress;
+      targetClose = openPrice + priceProgress + (Math.random() - 0.5) * volatility;
+    }
+    
     const open = currentPrice;
-    const close = currentPrice + change;
-    const high = Math.max(open, close) + Math.random() * (volatility / 2);
-    const low = Math.min(open, close) - Math.random() * (volatility / 2);
+    const close = targetClose;
+    const high = Math.max(open, close) + Math.random() * (volatility / 3);
+    const low = Math.min(open, close) - Math.random() * (volatility / 3);
     
     candles.push({ time: timestamp, open, high, low, close });
     
@@ -211,16 +192,11 @@ function generateIntradayData(symbol: string) {
     });
     
     currentPrice = close;
-    
-    // Move to next 5-minute candle
     candleTime = new Date(candleTime.getTime() + 5 * 60 * 1000);
   }
   
-  // Calculate overall change from open
-  const openPrice = candles.length > 0 ? candles[0].open : basePrice;
-  const lastClose = candles.length > 0 ? candles[candles.length - 1].close : basePrice;
-  const change = lastClose - openPrice;
+  const change = closePrice - openPrice;
   const changePercent = (change / openPrice) * 100;
   
-  return { candles, volume, currentPrice: lastClose, change, changePercent };
+  return { candles, volume, currentPrice: closePrice, change, changePercent };
 }

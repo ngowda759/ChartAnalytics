@@ -217,55 +217,54 @@ export default function OptionsPage() {
         </Button>
       </div>
 
-      {/* Options Table */}
-      <Card>
+      {/* Options Table - Mobile Friendly */}
+      <Card className="overflow-hidden">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">Option Chain - {selectedSymbol}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {loading ? (
             <div className="flex justify-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 px-2">Strike</th>
-                    <th className="text-right py-2 px-2">OI</th>
-                    <th className="text-right py-2 px-2">Chg %</th>
-                    <th className="text-right py-2 px-2">Volume</th>
-                    <th className="text-right py-2 px-2">IV</th>
-                    <th className="text-right py-2 px-2">Delta</th>
-                    <th className="text-right py-2 px-2">Bid</th>
-                    <th className="text-center py-2 px-2">LTP</th>
-                    <th className="text-left py-2 px-2">Ask</th>
+            <div className="overflow-x-auto -mx-4">
+              <table className="w-full text-xs min-w-[800px]">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium">Strike</th>
+                    <th className="text-right py-2 px-3 font-medium">OI</th>
+                    <th className="text-right py-2 px-3 font-medium">Chg</th>
+                    <th className="text-right py-2 px-3 font-medium hidden sm:table-cell">Vol</th>
+                    <th className="text-right py-2 px-3 font-medium hidden md:table-cell">IV</th>
+                    <th className="text-right py-2 px-3 font-medium hidden lg:table-cell">Delta</th>
+                    <th className="text-right py-2 px-3 font-medium hidden lg:table-cell">Bid</th>
+                    <th className="text-center py-2 px-3 font-medium">LTP</th>
+                    <th className="text-left py-2 px-3 font-medium hidden lg:table-cell">Ask</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredOptions.map((opt) => (
-                    <tr key={opt.id} className="border-b hover:bg-muted/50">
-                      <td className="py-2 px-2">
-                        <Badge variant={opt.type === 'CE' ? 'outline' : 'secondary'} className="font-mono">
+                    <tr key={opt.id} className="border-t hover:bg-muted/30">
+                      <td className="py-2 px-3">
+                        <Badge variant={opt.type === 'CE' ? 'outline' : 'secondary'} className="font-mono text-xs">
                           ₹{opt.strike.toLocaleString('en-IN')}
                         </Badge>
                       </td>
-                      <td className="text-right py-2 px-2">{formatNumber(opt.oi)}</td>
-                      <td className={`text-right py-2 px-2 ${opt.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {opt.change >= 0 ? <TrendingUp className="inline h-3 w-3 mr-1" /> : <TrendingDown className="inline h-3 w-3 mr-1" />}
+                      <td className="text-right py-2 px-3">{formatNumber(opt.oi)}</td>
+                      <td className={`text-right py-2 px-3 ${opt.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {opt.change >= 0 ? '+' : ''}{opt.change.toFixed(1)}%
                       </td>
-                      <td className="text-right py-2 px-2">{formatNumber(opt.volume)}</td>
-                      <td className="text-right py-2 px-2">{opt.iv.toFixed(1)}%</td>
-                      <td className={`text-right py-2 px-2 ${opt.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <td className="text-right py-2 px-3 hidden sm:table-cell">{formatNumber(opt.volume)}</td>
+                      <td className="text-right py-2 px-3 hidden md:table-cell">{opt.iv.toFixed(1)}%</td>
+                      <td className={`text-right py-2 px-3 hidden lg:table-cell ${opt.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {opt.delta.toFixed(2)}
                       </td>
-                      <td className="text-right py-2 px-2 text-muted-foreground">₹{opt.bid.toFixed(2)}</td>
-                      <td className={`text-center py-2 px-2 font-semibold ${opt.type === 'CE' ? 'text-green-600' : 'text-red-600'}`}>
+                      <td className="text-right py-2 px-3 text-muted-foreground hidden lg:table-cell">₹{opt.bid.toFixed(2)}</td>
+                      <td className={`text-center py-2 px-3 font-semibold ${opt.type === 'CE' ? 'text-green-600' : 'text-red-600'}`}>
                         ₹{opt.ltp.toFixed(2)}
                       </td>
-                      <td className="text-left py-2 px-2 text-muted-foreground">₹{opt.ask.toFixed(2)}</td>
+                      <td className="text-left py-2 px-3 text-muted-foreground hidden lg:table-cell">₹{opt.ask.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
