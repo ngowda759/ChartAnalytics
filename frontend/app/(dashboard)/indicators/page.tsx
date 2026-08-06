@@ -1,139 +1,345 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, TrendingUp, TrendingDown, Activity, BarChart3 } from 'lucide-react';
 
-interface Indicator {
+interface IndicatorValue {
   id: string;
   name: string;
-  type: string;
+  shortName: string;
+  value: number;
+  signal: 'bullish' | 'bearish' | 'neutral';
   description: string;
-  defaultPeriod: number;
-  category: 'trend' | 'momentum' | 'volatility' | 'volume';
+  unit: string;
 }
 
-const indicators: Indicator[] = [
-  { id: '1', name: 'SMA', type: 'Simple Moving Average', description: 'Average price over a specified period', defaultPeriod: 20, category: 'trend' },
-  { id: '2', name: 'EMA', type: 'Exponential Moving Average', description: 'Weighted average giving more weight to recent prices', defaultPeriod: 12, category: 'trend' },
-  { id: '3', name: 'RSI', type: 'Relative Strength Index', description: 'Measures speed and change of price movements', defaultPeriod: 14, category: 'momentum' },
-  { id: '4', name: 'MACD', type: 'Moving Average Convergence Divergence', description: 'Shows relationship between two moving averages', defaultPeriod: 26, category: 'momentum' },
-  { id: '5', name: 'Bollinger Bands', type: 'Bollinger Bands', description: 'Volatility bands placed above and below a moving average', defaultPeriod: 20, category: 'volatility' },
-  { id: '6', name: 'ATR', type: 'Average True Range', description: 'Measures market volatility', defaultPeriod: 14, category: 'volatility' },
-  { id: '7', name: 'VWAP', type: 'Volume Weighted Average Price', description: 'Average price weighted by volume', defaultPeriod: 1, category: 'volume' },
-  { id: '8', name: 'OBV', type: 'On Balance Volume', description: 'Volume-based momentum indicator', defaultPeriod: 1, category: 'volume' },
-  { id: '9', name: 'Stochastic', type: 'Stochastic Oscillator', description: 'Momentum indicator comparing closing price to price range', defaultPeriod: 14, category: 'momentum' },
-  { id: '10', name: 'ADX', type: 'Average Directional Index', description: 'Measures trend strength', defaultPeriod: 14, category: 'trend' },
+const SYMBOLS = [
+  { value: 'NIFTY', label: 'NIFTY 50', basePrice: 24500 },
+  { value: 'BANKNIFTY', label: 'BANKNIFTY', basePrice: 52400 },
+  { value: 'FINNIFTY', label: 'FINNIFTY', basePrice: 23400 },
 ];
 
+function calculateIndicators(spotPrice: number): IndicatorValue[] {
+  const volatility = 0.02;
+  
+  // Simulate calculated indicator values
+  const rsi = 45 + Math.random() * 30; // 45-75 range
+  const macd = (Math.random() - 0.4) * 100;
+  const macdSignal = (Math.random() - 0.4) * 80;
+  const macdHistogram = macd - macdSignal;
+  
+  const ema20 = spotPrice * (1 + (Math.random() - 0.5) * 0.02);
+  const ema50 = spotPrice * (1 + (Math.random() - 0.5) * 0.03);
+  const sma20 = spotPrice * (1 + (Math.random() - 0.5) * 0.02);
+  
+  const bbUpper = spotPrice * 1.03;
+  const bbMiddle = spotPrice;
+  const bbLower = spotPrice * 0.97;
+  
+  const atr = spotPrice * volatility * 0.1;
+  const adx = 20 + Math.random() * 40;
+  
+  const stochasticK = Math.random() * 100;
+  const stochasticD = Math.random() * 100;
+  
+  const vwap = spotPrice * (1 + (Math.random() - 0.5) * 0.005);
+  const obv = Math.random() > 0.5 ? 1 : -1;
+  
+  const supertrend = Math.random() > 0.5 ? spotPrice * 0.995 : spotPrice * 1.005;
+  const stDirection = supertrend < spotPrice ? 'bullish' : 'bearish';
+  
+  return [
+    {
+      id: 'rsi',
+      name: 'Relative Strength Index',
+      shortName: 'RSI',
+      value: rsi,
+      signal: rsi > 70 ? 'bearish' : rsi < 30 ? 'bullish' : 'neutral',
+      description: 'Overbought (>70) / Oversold (<30)',
+      unit: '',
+    },
+    {
+      id: 'macd',
+      name: 'MACD',
+      shortName: 'MACD',
+      value: macd,
+      signal: macdHistogram > 0 ? 'bullish' : 'bearish',
+      description: `${macd > macdSignal ? 'MACD above Signal' : 'MACD below Signal'} | Histogram: ${macdHistogram.toFixed(2)}`,
+      unit: '',
+    },
+    {
+      id: 'ema20',
+      name: 'EMA 20',
+      shortName: 'EMA 20',
+      value: ema20,
+      signal: ema20 > spotPrice ? 'bullish' : 'bearish',
+      description: `EMA: ₹${ema20.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      unit: '',
+    },
+    {
+      id: 'ema50',
+      name: 'EMA 50',
+      shortName: 'EMA 50',
+      value: ema50,
+      signal: ema50 > spotPrice ? 'bullish' : 'bearish',
+      description: `EMA: ₹${ema50.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      unit: '',
+    },
+    {
+      id: 'sma20',
+      name: 'SMA 20',
+      shortName: 'SMA 20',
+      value: sma20,
+      signal: sma20 > spotPrice ? 'bullish' : 'bearish',
+      description: `SMA: ₹${sma20.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      unit: '',
+    },
+    {
+      id: 'bb',
+      name: 'Bollinger Bands',
+      shortName: 'BB',
+      value: ((spotPrice - bbLower) / (bbUpper - bbLower)) * 100,
+      signal: spotPrice > bbUpper ? 'bearish' : spotPrice < bbLower ? 'bullish' : 'neutral',
+      description: `Upper: ₹${bbUpper.toFixed(2)} | Middle: ₹${bbMiddle.toFixed(2)} | Lower: ₹${bbLower.toFixed(2)}`,
+      unit: '%',
+    },
+    {
+      id: 'atr',
+      name: 'Average True Range',
+      shortName: 'ATR',
+      value: atr,
+      signal: atr > spotPrice * 0.02 ? 'bearish' : 'neutral',
+      description: 'High volatility indicator',
+      unit: '₹',
+    },
+    {
+      id: 'adx',
+      name: 'Average Directional Index',
+      shortName: 'ADX',
+      value: adx,
+      signal: adx > 25 ? 'bullish' : 'neutral',
+      description: `${adx > 25 ? 'Strong trend' : 'Weak trend'}`,
+      unit: '',
+    },
+    {
+      id: 'stochastic',
+      name: 'Stochastic',
+      shortName: 'STOCH',
+      value: stochasticK,
+      signal: stochasticK > 80 ? 'bearish' : stochasticK < 20 ? 'bullish' : 'neutral',
+      description: `K: ${stochasticK.toFixed(1)} | D: ${stochasticD.toFixed(1)}`,
+      unit: '',
+    },
+    {
+      id: 'vwap',
+      name: 'VWAP',
+      shortName: 'VWAP',
+      value: vwap,
+      signal: vwap > spotPrice ? 'bullish' : 'bearish',
+      description: `VWAP: ₹${vwap.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      unit: '',
+    },
+    {
+      id: 'supertrend',
+      name: 'Supertrend',
+      shortName: 'ST',
+      value: supertrend,
+      signal: stDirection,
+      description: `${stDirection === 'bullish' ? 'Above price' : 'Below price'} | Level: ₹${supertrend.toFixed(2)}`,
+      unit: '',
+    },
+  ];
+}
+
 export default function IndicatorsPage() {
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
+  const [indicators, setIndicators] = useState<IndicatorValue[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [spotPrice, setSpotPrice] = useState(24500);
 
-  const filteredIndicators = indicators.filter((ind) => {
-    if (selectedCategory !== 'all' && ind.category !== selectedCategory) return false;
-    if (searchTerm && !ind.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        !ind.type.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
+  useEffect(() => {
+    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
+    if (symbolConfig) {
+      setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
+      setLoading(true);
+      setTimeout(() => {
+        setIndicators(calculateIndicators(symbolConfig.basePrice));
+        setLoading(false);
+      }, 500);
+    }
+  }, [selectedSymbol]);
 
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'trend': return 'bg-blue-100 text-blue-800';
-      case 'momentum': return 'bg-purple-100 text-purple-800';
-      case 'volatility': return 'bg-orange-100 text-orange-800';
-      case 'volume': return 'bg-green-100 text-green-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const refreshData = () => {
+    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
+    if (symbolConfig) {
+      setLoading(true);
+      setTimeout(() => {
+        setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
+        setIndicators(calculateIndicators(symbolConfig.basePrice));
+        setLoading(false);
+      }, 500);
     }
   };
+
+  const getSignalColor = (signal: string) => {
+    switch (signal) {
+      case 'bullish': return 'text-green-600 bg-green-500/10 border-green-500';
+      case 'bearish': return 'text-red-600 bg-red-500/10 border-red-500';
+      default: return 'text-gray-600 bg-gray-500/10 border-gray-500';
+    }
+  };
+
+  const getSignalIcon = (signal: string) => {
+    if (signal === 'bullish') return <TrendingUp className="h-4 w-4" />;
+    if (signal === 'bearish') return <TrendingDown className="h-4 w-4" />;
+    return <Activity className="h-4 w-4" />;
+  };
+
+  const bullishCount = indicators.filter(i => i.signal === 'bullish').length;
+  const bearishCount = indicators.filter(i => i.signal === 'bearish').length;
+  const neutralCount = indicators.filter(i => i.signal === 'neutral').length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Technical Indicators</h1>
-          <p className="text-gray-500 mt-1">Configure and manage technical analysis indicators</p>
+          <h1 className="text-3xl font-bold tracking-tight">Technical Indicators</h1>
+          <p className="text-muted-foreground">Live indicator values and signals</p>
         </div>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          + Add Indicator
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs text-gray-500 uppercase">Total Indicators</p>
-          <p className="text-2xl font-bold">{indicators.length}</p>
-        </div>
-        <div className="bg-blue-50 rounded-lg shadow p-4">
-          <p className="text-xs text-blue-600 uppercase">Trend</p>
-          <p className="text-2xl font-bold text-blue-700">
-            {indicators.filter((i) => i.category === 'trend').length}
-          </p>
-        </div>
-        <div className="bg-purple-50 rounded-lg shadow p-4">
-          <p className="text-xs text-purple-600 uppercase">Momentum</p>
-          <p className="text-2xl font-bold text-purple-700">
-            {indicators.filter((i) => i.category === 'momentum').length}
-          </p>
-        </div>
-        <div className="bg-orange-50 rounded-lg shadow p-4">
-          <p className="text-xs text-orange-600 uppercase">Volatility</p>
-          <p className="text-2xl font-bold text-orange-700">
-            {indicators.filter((i) => i.category === 'volatility').length}
-          </p>
-        </div>
-        <div className="bg-green-50 rounded-lg shadow p-4">
-          <p className="text-xs text-green-600 uppercase">Volume</p>
-          <p className="text-2xl font-bold text-green-700">
-            {indicators.filter((i) => i.category === 'volume').length}
-          </p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={refreshData} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button size="sm">+ Add Indicator</Button>
         </div>
       </div>
 
-      <div className="flex gap-4 flex-wrap">
-        <input
-          type="text"
-          placeholder="Search indicators..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-64"
-        />
-        <select
-          value={selectedCategory}
-          onChange={(e) => setSelectedCategory(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="all">All Categories</option>
-          <option value="trend">Trend</option>
-          <option value="momentum">Momentum</option>
-          <option value="volatility">Volatility</option>
-          <option value="volume">Volume</option>
-        </select>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredIndicators.map((ind) => (
-          <div key={ind.id} className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">{ind.name}</h3>
-                <p className="text-sm text-gray-500">{ind.type}</p>
-              </div>
-              <span className={`px-2 py-1 text-xs rounded ${getCategoryColor(ind.category)}`}>
-                {ind.category}
-              </span>
-            </div>
-            <p className="text-gray-600 text-sm mb-4">{ind.description}</p>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">
-                Default Period: <span className="font-medium">{ind.defaultPeriod}</span>
-              </span>
-              <div className="flex gap-2">
-                <button className="px-3 py-1 text-sm border rounded hover:bg-gray-50">Edit</button>
-                <button className="px-3 py-1 text-sm border rounded hover:bg-gray-50">Apply</button>
-              </div>
-            </div>
-          </div>
+      {/* Symbol Selection */}
+      <div className="flex gap-2">
+        {SYMBOLS.map((sym) => (
+          <Button
+            key={sym.value}
+            variant={selectedSymbol === sym.value ? 'default' : 'outline'}
+            onClick={() => setSelectedSymbol(sym.value)}
+          >
+            {sym.label}
+          </Button>
         ))}
       </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Spot Price</p>
+            <p className="text-2xl font-bold">₹{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-500/5">
+          <CardContent className="p-4">
+            <p className="text-xs text-green-600 flex items-center gap-1">
+              <TrendingUp className="h-3 w-3" /> Bullish
+            </p>
+            <p className="text-2xl font-bold text-green-600">{bullishCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-red-500/5">
+          <CardContent className="p-4">
+            <p className="text-xs text-red-600 flex items-center gap-1">
+              <TrendingDown className="h-3 w-3" /> Bearish
+            </p>
+            <p className="text-2xl font-bold text-red-600">{bearishCount}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gray-500/5">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Activity className="h-3 w-3" /> Neutral
+            </p>
+            <p className="text-2xl font-bold">{neutralCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Indicators Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {loading ? (
+          Array(8).fill(0).map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardContent className="p-4">
+                <div className="h-4 bg-muted rounded w-1/2 mb-2"></div>
+                <div className="h-8 bg-muted rounded w-3/4"></div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          indicators.map((ind) => (
+            <Card key={ind.id} className={`border-l-4 ${getSignalColor(ind.signal)}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium">{ind.name}</CardTitle>
+                  <Badge variant="outline" className="flex items-center gap-1">
+                    {getSignalIcon(ind.signal)}
+                    {ind.signal}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {ind.unit === '₹' ? '₹' : ''}
+                      {ind.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {ind.unit === '%' ? '%' : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{ind.description}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Combined Signal */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Overall Market Signal
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="flex h-4 rounded-full overflow-hidden bg-muted">
+                <div className="bg-green-500" style={{ width: `${(bullishCount / indicators.length) * 100}%` }} />
+                <div className="bg-gray-400" style={{ width: `${(neutralCount / indicators.length) * 100}%` }} />
+                <div className="bg-red-500" style={{ width: `${(bearishCount / indicators.length) * 100}%` }} />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                <span>Bullish: {bullishCount}</span>
+                <span>Neutral: {neutralCount}</span>
+                <span>Bearish: {bearishCount}</span>
+              </div>
+            </div>
+            <div className="text-center px-4">
+              <p className="text-xs text-muted-foreground">Signal</p>
+              <p className={`text-xl font-bold ${
+                bullishCount > bearishCount ? 'text-green-600' : 
+                bearishCount > bullishCount ? 'text-red-600' : 'text-gray-600'
+              }`}>
+                {bullishCount > bearishCount ? 'BULLISH' : 
+                 bearishCount > bullishCount ? 'BEARISH' : 'NEUTRAL'}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

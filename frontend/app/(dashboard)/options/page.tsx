@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface OptionContract {
   id: string;
@@ -14,127 +18,262 @@ interface OptionContract {
   oi: number;
   iv: number;
   delta: number;
+  bid: number;
+  ask: number;
 }
 
-const mockOptions: OptionContract[] = [
-  { id: '1', symbol: 'NIFTY', expiry: '2024-08-08', strike: 24500, type: 'CE', ltp: 245.50, change: 5.2, volume: 1250000, oi: 8900000, iv: 18.5, delta: 0.52 },
-  { id: '2', symbol: 'NIFTY', expiry: '2024-08-08', strike: 24500, type: 'PE', ltp: 198.30, change: -3.1, volume: 980000, oi: 7200000, iv: 17.2, delta: -0.48 },
-  { id: '3', symbol: 'NIFTY', expiry: '2024-08-08', strike: 24600, type: 'CE', ltp: 178.90, change: 4.8, volume: 850000, oi: 5600000, iv: 17.8, delta: 0.45 },
-  { id: '4', symbol: 'BANKNIFTY', expiry: '2024-08-08', strike: 52500, type: 'CE', ltp: 456.75, change: 6.3, volume: 650000, oi: 4200000, iv: 19.2, delta: 0.55 },
-  { id: '5', symbol: 'BANKNIFTY', expiry: '2024-08-08', strike: 52500, type: 'PE', ltp: 389.20, change: -2.5, volume: 520000, oi: 3800000, iv: 18.5, delta: -0.45 },
+const SYMBOLS = [
+  { value: 'NIFTY', label: 'NIFTY 50', basePrice: 24500 },
+  { value: 'BANKNIFTY', label: 'BANKNIFTY', basePrice: 52400 },
+  { value: 'FINNIFTY', label: 'FINNIFTY', basePrice: 23400 },
 ];
 
+function generateMockOptions(symbol: string, spotPrice: number): OptionContract[] {
+  const contracts: OptionContract[] = [];
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + (7 - expiry.getDay()) % 7 + (expiry.getDay() === 0 ? 1 : 0)); // Next Thursday
+  const expiryStr = expiry.toISOString().split('T')[0];
+  
+  const strikes = [-300, -200, -100, -50, 0, 50, 100, 200, 300];
+  
+  strikes.forEach((offset, i) => {
+    const strike = Math.round((spotPrice + offset) / 50) * 50;
+    const isITM = (offset < 0 && i % 2 === 0) || (offset > 0 && i % 2 === 1);
+    
+    // CE prices
+    const ceLtp = Math.max(0.5, Math.abs(spotPrice - strike) + (isITM ? -10 : 10) + Math.random() * 50);
+    contracts.push({
+      id: `${symbol}-CE-${strike}`,
+      symbol,
+      expiry: expiryStr,
+      strike,
+      type: 'CE',
+      ltp: Math.round(ceLtp * 100) / 100,
+      change: (Math.random() - 0.45) * 10,
+      volume: Math.floor(Math.random() * 500000) + 100000,
+      oi: Math.floor(Math.random() * 5000000) + 500000,
+      iv: 15 + Math.random() * 10,
+      delta: offset < 0 ? 0.7 + Math.random() * 0.25 : 0.15 + Math.random() * 0.25,
+      bid: Math.round((ceLtp - 2) * 100) / 100,
+      ask: Math.round((ceLtp + 2) * 100) / 100,
+    });
+    
+    // PE prices
+    const peLtp = Math.max(0.5, Math.abs(spotPrice - strike) + (isITM ? -10 : 10) + Math.random() * 50);
+    contracts.push({
+      id: `${symbol}-PE-${strike}`,
+      symbol,
+      expiry: expiryStr,
+      strike,
+      type: 'PE',
+      ltp: Math.round(peLtp * 100) / 100,
+      change: (Math.random() - 0.55) * 10,
+      volume: Math.floor(Math.random() * 500000) + 100000,
+      oi: Math.floor(Math.random() * 5000000) + 500000,
+      iv: 15 + Math.random() * 10,
+      delta: offset < 0 ? -0.7 - Math.random() * 0.25 : -0.15 - Math.random() * 0.25,
+      bid: Math.round((peLtp - 2) * 100) / 100,
+      ask: Math.round((peLtp + 2) * 100) / 100,
+    });
+  });
+  
+  return contracts.sort((a, b) => a.strike - b.strike);
+}
+
 export default function OptionsPage() {
-  const [options] = useState<OptionContract[]>(mockOptions);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
+  const [options, setOptions] = useState<OptionContract[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [symbol, setSymbol] = useState<string>('all');
+  const [spotPrice, setSpotPrice] = useState(24500);
+
+  useEffect(() => {
+    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
+    if (symbolConfig) {
+      setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
+      setLoading(true);
+      // Simulate API fetch
+      setTimeout(() => {
+        setOptions(generateMockOptions(selectedSymbol, symbolConfig.basePrice));
+        setLoading(false);
+      }, 500);
+    }
+  }, [selectedSymbol]);
+
+  const refreshData = () => {
+    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
+    if (symbolConfig) {
+      setLoading(true);
+      setTimeout(() => {
+        setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
+        setOptions(generateMockOptions(selectedSymbol, symbolConfig.basePrice));
+        setLoading(false);
+      }, 500);
+    }
+  };
 
   const filteredOptions = options.filter((opt) => {
-    if (symbol !== 'all' && opt.symbol !== symbol) return false;
     if (filter !== 'all' && opt.type !== filter) return false;
     return true;
   });
 
+  const callContracts = filteredOptions.filter(o => o.type === 'CE');
+  const putContracts = filteredOptions.filter(o => o.type === 'PE');
+  const totalCallOI = callContracts.reduce((acc, o) => acc + o.oi, 0);
+  const totalPutOI = putContracts.reduce((acc, o) => acc + o.oi, 0);
+  const pcr = totalPutOI / totalCallOI;
+
   const formatNumber = (num: number) => {
+    if (num >= 10000000) return `${(num / 10000000).toFixed(2)} Cr`;
+    if (num >= 100000) return `${(num / 100000).toFixed(2)} L`;
     return new Intl.NumberFormat('en-IN').format(num);
+  };
+
+  const formatINR = (num: number) => {
+    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Options Trading</h1>
-          <p className="text-gray-500 mt-1">Track and analyze options contracts</p>
+          <h1 className="text-3xl font-bold tracking-tight">Options Chain</h1>
+          <p className="text-muted-foreground">Track and analyze options contracts</p>
         </div>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          + New Strategy
-        </button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={refreshData} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button size="sm">+ New Strategy</Button>
+        </div>
       </div>
 
+      {/* Symbol Selection */}
+      <div className="flex gap-2">
+        {SYMBOLS.map((sym) => (
+          <Button
+            key={sym.value}
+            variant={selectedSymbol === sym.value ? 'default' : 'outline'}
+            onClick={() => setSelectedSymbol(sym.value)}
+          >
+            {sym.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Spot Price & PCR */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <p className="text-xs text-gray-500 uppercase">Active Contracts</p>
-          <p className="text-2xl font-bold">{options.length}</p>
-        </div>
-        <div className="bg-green-50 rounded-lg shadow p-4">
-          <p className="text-xs text-green-600 uppercase">Calls (CE)</p>
-          <p className="text-2xl font-bold text-green-700">
-            {options.filter((o) => o.type === 'CE').length}
-          </p>
-        </div>
-        <div className="bg-red-50 rounded-lg shadow p-4">
-          <p className="text-xs text-red-600 uppercase">Puts (PE)</p>
-          <p className="text-2xl font-bold text-red-700">
-            {options.filter((o) => o.type === 'PE').length}
-          </p>
-        </div>
-        <div className="bg-blue-50 rounded-lg shadow p-4">
-          <p className="text-xs text-blue-600 uppercase">Total Volume</p>
-          <p className="text-2xl font-bold text-blue-700">
-            {formatNumber(options.reduce((acc, o) => acc + o.volume, 0))}
-          </p>
-        </div>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Spot Price</p>
+            <p className="text-2xl font-bold">₹{formatINR(spotPrice)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">PCR</p>
+            <p className={`text-2xl font-bold ${pcr > 1 ? 'text-green-600' : 'text-red-600'}`}>
+              {pcr.toFixed(2)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Call OI</p>
+            <p className="text-2xl font-bold text-red-600">{formatNumber(totalCallOI)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Put OI</p>
+            <p className="text-2xl font-bold text-green-600">{formatNumber(totalPutOI)}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="flex gap-4 flex-wrap">
-        <select
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+      {/* Filter */}
+      <div className="flex gap-4">
+        <Button
+          variant={filter === 'all' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilter('all')}
         >
-          <option value="all">All Symbols</option>
-          <option value="NIFTY">NIFTY</option>
-          <option value="BANKNIFTY">BANKNIFTY</option>
-        </select>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          All ({filteredOptions.length})
+        </Button>
+        <Button
+          variant={filter === 'CE' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilter('CE')}
         >
-          <option value="all">All Types</option>
-          <option value="CE">Calls (CE)</option>
-          <option value="PE">Puts (PE)</option>
-        </select>
+          Calls ({callContracts.length})
+        </Button>
+        <Button
+          variant={filter === 'PE' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setFilter('PE')}
+        >
+          Puts ({putContracts.length})
+        </Button>
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expiry</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Strike</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">LTP</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Change</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Volume</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">OI</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredOptions.map((opt) => (
-              <tr key={opt.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 font-medium">{opt.symbol}</td>
-                <td className="px-6 py-4">{opt.expiry}</td>
-                <td className="px-6 py-4">₹{opt.strike.toLocaleString()}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 text-xs rounded ${
-                    opt.type === 'CE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
-                    {opt.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4">₹{opt.ltp.toFixed(2)}</td>
-                <td className={`px-6 py-4 ${opt.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {opt.change >= 0 ? '+' : ''}{opt.change}%
-                </td>
-                <td className="px-6 py-4">{formatNumber(opt.volume)}</td>
-                <td className="px-6 py-4">{formatNumber(opt.oi)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Options Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Option Chain - {selectedSymbol}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-2">Strike</th>
+                    <th className="text-right py-2 px-2">OI</th>
+                    <th className="text-right py-2 px-2">Chg %</th>
+                    <th className="text-right py-2 px-2">Volume</th>
+                    <th className="text-right py-2 px-2">IV</th>
+                    <th className="text-right py-2 px-2">Delta</th>
+                    <th className="text-right py-2 px-2">Bid</th>
+                    <th className="text-center py-2 px-2">LTP</th>
+                    <th className="text-left py-2 px-2">Ask</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOptions.map((opt) => (
+                    <tr key={opt.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-2">
+                        <Badge variant={opt.type === 'CE' ? 'outline' : 'secondary'} className="font-mono">
+                          ₹{opt.strike.toLocaleString('en-IN')}
+                        </Badge>
+                      </td>
+                      <td className="text-right py-2 px-2">{formatNumber(opt.oi)}</td>
+                      <td className={`text-right py-2 px-2 ${opt.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {opt.change >= 0 ? <TrendingUp className="inline h-3 w-3 mr-1" /> : <TrendingDown className="inline h-3 w-3 mr-1" />}
+                        {opt.change >= 0 ? '+' : ''}{opt.change.toFixed(1)}%
+                      </td>
+                      <td className="text-right py-2 px-2">{formatNumber(opt.volume)}</td>
+                      <td className="text-right py-2 px-2">{opt.iv.toFixed(1)}%</td>
+                      <td className={`text-right py-2 px-2 ${opt.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {opt.delta.toFixed(2)}
+                      </td>
+                      <td className="text-right py-2 px-2 text-muted-foreground">₹{opt.bid.toFixed(2)}</td>
+                      <td className={`text-center py-2 px-2 font-semibold ${opt.type === 'CE' ? 'text-green-600' : 'text-red-600'}`}>
+                        ₹{opt.ltp.toFixed(2)}
+                      </td>
+                      <td className="text-left py-2 px-2 text-muted-foreground">₹{opt.ask.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
