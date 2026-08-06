@@ -43,23 +43,22 @@ export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
 
+  // When hidden, show only a toggle button
   if (isHidden) {
     return (
-      <div className="flex flex-col border-r bg-card">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsHidden(false)}
-              className="h-12 w-12 mx-auto my-2"
-            >
-              <PanelLeft className="h-5 w-5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">Show Sidebar</TooltipContent>
-        </Tooltip>
-      </div>
+      <aside className="flex flex-col border-r bg-card">
+        <div className="flex items-center justify-center p-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsHidden(false)}
+            className="h-10 w-10"
+            title="Show Sidebar"
+          >
+            <PanelLeft className="h-5 w-5" />
+          </Button>
+        </div>
+      </aside>
     );
   }
 
@@ -70,9 +69,9 @@ export function Sidebar() {
         isCollapsed ? 'w-16' : 'w-64'
       )}
     >
-      <div className="flex h-16 items-center justify-between border-b px-4">
+      <div className="flex h-16 items-center justify-between border-b px-2 sm:px-4">
         {!isCollapsed && (
-          <h1 className="text-lg font-bold tracking-tight">
+          <h1 className="text-base sm:text-lg font-bold tracking-tight truncate">
             AI Trading
           </h1>
         )}
@@ -101,7 +100,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 space-y-1 p-2">
+      <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
           const Icon = item.icon;
@@ -117,7 +116,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="h-5 w-5 flex-shrink-0" />
-              {!isCollapsed && <span>{item.name}</span>}
+              {!isCollapsed && <span className="truncate">{item.name}</span>}
             </Link>
           );
 
@@ -134,13 +133,13 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t p-4">
+      <div className="border-t p-2 sm:p-4">
         {!isCollapsed && (
-          <div className="rounded-lg bg-accent p-3">
+          <div className="rounded-lg bg-accent p-2 sm:p-3">
             <p className="text-xs font-medium text-accent-foreground">
               Market Hours
             </p>
-            <p className="mt-1 text-lg font-bold">
+            <p className="text-base sm:text-lg font-bold">
               {new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}
             </p>
             <p className="text-xs text-muted-foreground">IST (UTC+5:30)</p>
