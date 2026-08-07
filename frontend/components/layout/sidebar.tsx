@@ -15,10 +15,9 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  PanelLeftClose,
-  PanelLeft,
+  X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -38,31 +37,106 @@ const navigation = [
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+}
+
+export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [isHidden, setIsHidden] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  if (isHidden) {
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setIsCollapsed(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  const handleNavClick = () => {
+    if (isMobile) {
+      setIsOpen(false);
+    }
+  };
+
+  if (isMobile) {
     return (
-      <div className="flex flex-col border-r bg-card">
-        <Tooltip>
-          <TooltipTrigger asChild>
+      <>
+        {/* Mobile overlay */}
+        {isOpen && (
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={() => setIsOpen(false)}
+          />
+        )}
+        
+        {/* Mobile sidebar drawer */}
+        <aside
+          className={cn(
+            'fixed left-0 top-0 z-50 flex h-full w-64 flex-col border-r bg-card transition-transform duration-300 md:hidden',
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          )}
+        >
+          <div className="flex h-16 items-center justify-between border-b px-4">
+            <h1 className="text-lg font-bold tracking-tight">AI Trading</h1>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setIsHidden(false)}
-              className="h-12 w-12 mx-auto my-2"
+              onClick={() => setIsOpen(false)}
+              className="h-8 w-8"
             >
-              <PanelLeft className="h-5 w-5" />
+              <X className="h-5 w-5" />
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">Show Sidebar</TooltipContent>
-        </Tooltip>
-      </div>
+          </div>
+
+          <nav className="flex-1 space-y-1 p-2">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={handleNavClick}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <Icon className="h-5 w-5 flex-shrink-0" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="border-t p-4">
+            <div className="rounded-lg bg-accent p-3">
+              <p className="text-xs font-medium text-accent-foreground">
+                Market Hours
+              </p>
+              <p className="mt-1 text-lg font-bold">
+                {new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}
+              </p>
+              <p className="text-xs text-muted-foreground">IST (UTC+5:30)</p>
+            </div>
+          </div>
+        </aside>
+      </>
     );
   }
 
+  // Desktop sidebar
   return (
     <aside
       className={cn(
@@ -76,29 +150,18 @@ export function Sidebar() {
             AI Trading
           </h1>
         )}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsHidden(true)}
-            className="h-8 w-8"
-            title="Hide sidebar"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="h-8 w-8"
-          >
-            {isCollapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="h-8 w-8"
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </Button>
       </div>
 
       <nav className="flex-1 space-y-1 p-2">
