@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Moon, Sun, User } from 'lucide-react';
+import { Bell, Moon, Sun, Menu } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,12 +14,27 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 
-export function Header() {
+interface HeaderProps {
+  onMenuClick: () => void;
+}
+
+export function Header({ onMenuClick }: HeaderProps) {
   const { setTheme, theme } = useTheme();
 
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-card px-6">
+    <header className="flex h-16 items-center justify-between border-b bg-card px-4 md:px-6">
       <div className="flex items-center gap-4">
+        {/* Mobile menu button - only visible on small screens */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onMenuClick}
+          className="h-9 w-9 md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+          <span className="sr-only">Toggle menu</span>
+        </Button>
+
         <div>
           <h2 className="text-sm font-medium text-muted-foreground">
             Welcome back
