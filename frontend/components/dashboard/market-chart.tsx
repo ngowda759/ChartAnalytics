@@ -20,24 +20,40 @@ interface VolumeData {
   color: string;
 }
 
-// Generate intraday timestamps for NSE market hours (9:15 AM - 3:30 PM IST)
-function getIntradayStartTime(): Date {
+// Convert local time to IST
+function toIST(localDate: Date): Date {
+  // IST is UTC+5:30
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const utcTime = localDate.getTime() + (localDate.getTimezoneOffset() * 60 * 1000);
+  return new Date(utcTime + istOffset);
+}
+
+// Get the last trading day (handles weekends and holidays)
+function getLastTradingDay(): Date {
   const now = new Date();
-  // Set to today's date with market open time (9:15 AM IST = 3:45 UTC)
-  const marketOpen = new Date(now);
-  marketOpen.setUTCHours(3, 45, 0, 0);
+  const ist = toIST(now);
+  let day = ist.getDay();
   
-  // If market hasn't opened today yet, use today's date
-  // If after market hours, use today
-  // If during weekend, adjust appropriately
-  const day = now.getDay();
+  // If it's Saturday (6), go back to Friday
+  // If it's Sunday (0), go back to Friday
+  // If it's Monday (1), check if it's before market hours - go back to Friday
   if (day === 0) { // Sunday
-    marketOpen.setDate(marketOpen.getDate() + 1);
+    ist.setDate(ist.getDate() - 2); // Go to Friday
   } else if (day === 6) { // Saturday
-    marketOpen.setDate(marketOpen.getDate() + 2);
+    ist.setDate(ist.getDate() - 1); // Go to Friday
   }
   
-  return marketOpen;
+  return ist;
+}
+
+// Generate intraday timestamps for NSE market hours (9:15 AM - 3:30 PM IST)
+function getIntradayStartTime(): Date {
+  const tradingDay = getLastTradingDay();
+  
+  // Set to market open time 9:15 AM IST
+  tradingDay.setHours(9, 15, 0, 0);
+  
+  return tradingDay;
 }
 
 function isWithinMarketHours(date: Date): boolean {
@@ -177,20 +193,20 @@ function generateIntradayData(symbol: string) {
   const basePrice = symbol === 'NIFTY' ? 24500 : 52400;
   const volatility = symbol === 'NIFTY' ? 50 : 100;
   
-  // Get start time for market open (9:15 AM IST)
+  // Get start time for market open in IST
   const marketOpen = getIntradayStartTime();
   let currentPrice = basePrice;
   
-  // Generate 5-minute candles from market open
-  const now = new Date();
+  // Get current time in IST
+  const nowIST = toIST(new Date());
   const marketClose = new Date(marketOpen);
   marketClose.setHours(15, 30, 0, 0); // 3:30 PM IST
   
   // If current time is after market close, show full session
   // Otherwise show candles up to current time
-  const endTime = now > marketClose ? marketClose : now;
+  const endTime = nowIST > marketClose ? marketClose : nowIST;
   
-  // Generate 75 candles (5 min candles from 9:15 to 3:30 = 75 candles)
+  // Generate 5-minute candles from market open
   let candleTime = new Date(marketOpen);
   
   while (candleTime <= endTime) {
