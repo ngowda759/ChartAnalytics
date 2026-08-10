@@ -525,7 +525,6 @@ async def get_scan_dashboard(dashboard_id: str):
     return _build_dashboard(dashboard_id)
 
 
-
 @router.get("/screeners", response_model=List[str])
 async def get_screener_slugs():
     """List available Chartink-style screener slugs."""
@@ -548,7 +547,6 @@ async def run_screener(slug: str, limit: int = Query(25, ge=1, le=100)):
     return widget
 
 
-
 @router.get("/nse-dashboard", response_model=ScreenerDashboard)
 async def get_nse_dashboard():
     """Live NSE-backed scan dashboard (Chartink-style).
@@ -566,4 +564,3 @@ async def get_nse_dashboard():
         description="Live NSE data via nsetools + Chartink-style formula screeners",
         widgets=widgets,
     )
-
