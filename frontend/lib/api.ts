@@ -20,6 +20,33 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+export interface ScreenerRow {
+  symbol: string;
+  name?: string | null;
+  ltp?: number | null;
+  change_percent?: number | null;
+  volume?: number | null;
+  extra?: Record<string, number> | null;
+}
+
+export interface ScreenerWidget {
+  id: string;
+  title: string;
+  description?: string | null;
+  timeframe: string;
+  columns: string[];
+  rows: ScreenerRow[];
+  last_updated: string;
+}
+
+export interface ScreenerDashboard {
+  id: string;
+  name: string;
+  author: string;
+  description?: string | null;
+  widgets: ScreenerWidget[];
+}
+
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -164,6 +191,12 @@ export const scannerApi = {
   getScanResults: () => fetchApi<any[]>('/scanner/'),
   getBreakouts: () => fetchApi<any[]>('/scanner/breakouts'),
   getOIBuildups: () => fetchApi<any[]>('/scanner/oi-buildup'),
+  getDashboard: (dashboardId: string) =>
+    fetchApi<ScreenerDashboard>(`/scanner/dashboard/${dashboardId}`),
+  getNseDashboard: () => fetchApi<ScreenerDashboard>('/scanner/nse-dashboard'),
+  getScreenerSlugs: () => fetchApi<string[]>('/scanner/screeners'),
+  runScreener: (slug: string, limit = 25) =>
+    fetchApi<ScreenerWidget>(`/scanner/screener/${encodeURIComponent(slug)}?limit=${limit}`),
 };
 
 // Alerts API
