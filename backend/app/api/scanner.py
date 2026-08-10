@@ -22,7 +22,12 @@ from app.services.screener_engine import (
     build_screener_widget,
     list_screener_slugs,
 )
-from app.services.nse_service import build_nse_dashboard
+from app.services.nse_service import (
+    build_nse_dashboard,
+    get_nr7_breakout_candidates,
+    get_potential_breakouts,
+)
+from datetime import datetime as _dt
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -536,11 +541,41 @@ async def get_screener_slugs():
 async def run_screener(slug: str, limit: int = Query(25, ge=1, le=100)):
     """Run a Chartink-style screener by slug and return matching rows.
 
-    Mirrors screeners such as `potential-breakouts` and
-    `copy-morning-scanner-for-buy-nr7-based-breakout-8`, evaluating the real
-    formula over synthetic OHLC history.
+    The two headline screeners (NR7 breakout, potential breakouts) are built
+    from LIVE NSE data; any other slug falls back to the synthetic engine.
     """
     logger.info("running_screener", slug=slug, limit=limit)
+
+    if slug == "copy-morning-scanner-for-buy-nr7-based-breakout-8":
+        rows = get_nr7_breakout_candidates(limit=limit)
+        return ScreenerWidget(
+            id=slug,
+            title="Morning Scanner - NR7 Breakout (Buy)",
+            description=(
+                "Today's advancing stocks with the tightest intraday range "
+                "(NR7 proxy) and a close near the day high. Live NSE data."
+            ),
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "volume", "extra.range_pct"],
+            rows=rows,
+            last_updated=_dt.utcnow(),
+        )
+
+    if slug == "potential-breakouts":
+        rows = get_potential_breakouts(limit=limit)
+        return ScreenerWidget(
+            id=slug,
+            title="Potential Breakouts",
+            description=(
+                "Stocks that printed a new 52-week high today (live NSE), "
+                "ranked by % change."
+            ),
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "extra.new_52wh", "extra.distance_from_high_pct"],
+            rows=rows,
+            last_updated=_dt.utcnow(),
+        )
+
     widget = build_screener_widget(slug, limit=limit)
     if widget is None:
         raise HTTPException(status_code=404, detail=f"Screener '{slug}' not found")
