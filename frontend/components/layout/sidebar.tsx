@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  LayoutGrid,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ import {
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Scan Dashboard', href: '/scan-dashboard', icon: LayoutGrid },
   { name: 'Options', href: '/options', icon: TrendingUp },
   { name: 'Indicators', href: '/indicators', icon: BarChart3 },
   { name: 'Scanner', href: '/scanner', icon: Search },

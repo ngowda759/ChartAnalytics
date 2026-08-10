@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from typing import List, Optional
 from datetime import datetime
 import random
@@ -14,7 +14,15 @@ from app.schemas.scanner import (
     EMACrossSignal,
     VolumeSignal,
     OISignal,
+    ScreenerDashboard,
+    ScreenerWidget,
+    ScreenerRow,
 )
+from app.services.screener_engine import (
+    build_screener_widget,
+    list_screener_slugs,
+)
+from app.services.nse_service import build_nse_dashboard
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -262,3 +270,300 @@ async def scan_oi_buildup(limit: int = Query(20, ge=1, le=50)):
         )
 
     return sorted(results, key=lambda x: x.confidence, reverse=True)[:limit]
+
+
+# ---------------------------------------------------------------------------
+# Chartink-style multi-widget scan dashboard
+# ---------------------------------------------------------------------------
+
+_INDEX_UNIVERSE = [
+    {"symbol": "CNXREALTY", "name": "Nifty Realty", "base": 1050.0},
+    {"symbol": "NIFTYPSE", "name": "Nifty PSE", "base": 4320.0},
+    {"symbol": "NIFTYPSUBANK", "name": "Nifty PSU Bank", "base": 6120.0},
+    {"symbol": "NIFTYINDDEFENCE", "name": "Nifty India Defence", "base": 2340.0},
+    {"symbol": "NIFTYMETAL", "name": "Nifty Metal", "base": 9120.0},
+    {"symbol": "NIFTYENERGY", "name": "Nifty Energy", "base": 41800.0},
+    {"symbol": "NIFTYMIDCAP100", "name": "Nifty Midcap 100", "base": 56200.0},
+    {"symbol": "INDIAVIX", "name": "India VIX", "base": 14.5},
+]
+
+_STOCK_UNIVERSE = [
+    {"symbol": "RELIANCE", "name": "Reliance Industries", "base": 2967.0},
+    {"symbol": "HDFCBANK", "name": "HDFC Bank", "base": 1689.0},
+    {"symbol": "ICICIBANK", "name": "ICICI Bank", "base": 1124.0},
+    {"symbol": "INFY", "name": "Infosys", "base": 1834.0},
+    {"symbol": "TCS", "name": "Tata Consultancy", "base": 4123.0},
+    {"symbol": "SBIN", "name": "State Bank of India", "base": 823.0},
+    {"symbol": "BHARTIARTL", "name": "Bharti Airtel", "base": 1456.0},
+    {"symbol": "TATASTEEL", "name": "Tata Steel", "base": 156.0},
+    {"symbol": "ADANIPORTS", "name": "Adani Ports", "base": 1289.0},
+    {"symbol": "PAYTM", "name": "Paytm (One97)", "base": 432.0},
+    {"symbol": "NAUKRI", "name": "Info Edge", "base": 5870.0},
+    {"symbol": "TITAN", "name": "Titan Company", "base": 3450.0},
+    {"symbol": "CHOLAFIN", "name": "Cholamandalam", "base": 1620.0},
+    {"symbol": "BAJFINANCE", "name": "Bajaj Finance", "base": 7850.0},
+    {"symbol": "JSWENERGY", "name": "JSW Energy", "base": 645.0},
+    {"symbol": "SHRIRAMFIN", "name": "Shriram Finance", "base": 2980.0},
+    {"symbol": "PFC", "name": "Power Finance", "base": 478.0},
+    {"symbol": "BHARATFORG", "name": "Bharat Forge", "base": 1342.0},
+    {"symbol": "RECLTD", "name": "REC Limited", "base": 512.0},
+    {"symbol": "INDUSTOWER", "name": "Indus Towers", "base": 398.0},
+    {"symbol": "KAYNES", "name": "Kaynes Technology", "base": 4120.0},
+    {"symbol": "BANKINDIA", "name": "Bank of India", "base": 118.0},
+    {"symbol": "LICI", "name": "LIC India", "base": 845.0},
+    {"symbol": "TMPV", "name": "Thomas Cook (TMPV)", "base": 232.0},
+    {"symbol": "PREMIERENE", "name": "Premier Energies", "base": 478.0},
+    {"symbol": "SYRMA", "name": "Syrma SGS", "base": 542.0},
+    {"symbol": "MARUTI", "name": "Maruti Suzuki", "base": 12800.0},
+    {"symbol": "KOTAKBANK", "name": "Kotak Bank", "base": 1780.0},
+    {"symbol": "LT", "name": "Larsen & Toubro", "base": 3650.0},
+    {"symbol": "NESTLEIND", "name": "Nestle India", "base": 2450.0},
+]
+
+
+def _perturbed_price(base: float) -> float:
+    return round(base * (1 + random.uniform(-0.06, 0.06)), 2)
+
+
+def _change_percent(bias: float = 0.0) -> float:
+    return round(random.uniform(-4.5, 4.5) + bias, 2)
+
+
+def _volume(base_price: float) -> int:
+    return random.randint(500_000, 25_000_000)
+
+
+def _rows(universe, n, *, change_filter=None, sort_key=None, extra_fn=None):
+    picked = random.sample(universe, min(n, len(universe)))
+    rows = []
+    for item in picked:
+        pct = _change_percent()
+        if change_filter and not change_filter(pct):
+            continue
+        row = ScreenerRow(
+            symbol=item["symbol"],
+            name=item.get("name"),
+            ltp=_perturbed_price(item["base"]),
+            change_percent=pct,
+            volume=_volume(item["base"]),
+            extra=extra_fn(item) if extra_fn else None,
+        )
+        rows.append(row)
+    if sort_key:
+        rows.sort(key=sort_key, reverse=True)
+    return rows
+
+
+def _build_dashboard(dashboard_id: str) -> ScreenerDashboard:
+    now = datetime.utcnow()
+
+    indices_momentum = _rows(
+        _INDEX_UNIVERSE, 6, sort_key=lambda r: abs(r.change_percent or 0)
+    )
+    sectoral_winners = _rows(
+        _INDEX_UNIVERSE,
+        6,
+        change_filter=lambda pct: pct > 0,
+        sort_key=lambda r: r.change_percent or 0,
+    )
+
+    top_gainers = _rows(
+        _STOCK_UNIVERSE,
+        8,
+        change_filter=lambda pct: pct > 1.0,
+        sort_key=lambda r: r.change_percent or 0,
+    )
+    top_losers = _rows(
+        _STOCK_UNIVERSE,
+        8,
+        change_filter=lambda pct: pct < -1.0,
+        sort_key=lambda r: r.change_percent or 0,
+    )
+    volume_surge = _rows(
+        _STOCK_UNIVERSE,
+        8,
+        sort_key=lambda r: r.volume or 0,
+        extra_fn=lambda item: {
+            "volume_factor": round(random.uniform(1.5, 6.0), 2),
+            "vwap": _perturbed_price(item["base"]),
+        },
+    )
+
+    def rsi_extra(item):
+        rsi = round(random.uniform(5, 95), 2)
+        return {"rsi": rsi, "ema20": _perturbed_price(item["base"])}
+
+    rsi_oversold = _rows(
+        _STOCK_UNIVERSE, 6, extra_fn=rsi_extra, sort_key=lambda r: (r.extra or {}).get("rsi", 50)
+    )
+    rsi_oversold = [r for r in rsi_oversold if (r.extra or {}).get("rsi", 50) < 35][:6]
+
+    rsi_overbought = _rows(
+        _STOCK_UNIVERSE, 6, extra_fn=rsi_extra, sort_key=lambda r: (r.extra or {}).get("rsi", 50)
+    )
+    rsi_overbought = [r for r in rsi_overbought if (r.extra or {}).get("rsi", 50) > 65][:6]
+
+    def high_extra(item):
+        return {"pct_from_high": round(random.uniform(0.0, 2.0), 2)}
+
+    fifty_two_week_high = _rows(
+        _STOCK_UNIVERSE,
+        8,
+        extra_fn=high_extra,
+        sort_key=lambda r: r.change_percent or 0,
+    )
+
+    intraday_breakout = _rows(
+        _STOCK_UNIVERSE,
+        6,
+        change_filter=lambda pct: pct > 0.5,
+        sort_key=lambda r: r.change_percent or 0,
+    )
+
+    widgets = [
+        ScreenerWidget(
+            id="indices_momentum",
+            title="Indices Momentum",
+            description="Sectoral indices ranked by absolute % change",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp"],
+            rows=indices_momentum,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="sectoral_winners",
+            title="Sectoral Winners",
+            description="Sectoral indices trading positive today",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp"],
+            rows=sectoral_winners,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="top_gainers",
+            title="Top Gainers",
+            description="Stocks with the highest % change today",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "volume"],
+            rows=top_gainers,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="top_losers",
+            title="Top Losers",
+            description="Stocks with the most negative % change today",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "volume"],
+            rows=top_losers,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="volume_surge",
+            title="Volume Surge",
+            description="Unusual volume activity with volume factor",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "volume", "extra.volume_factor", "extra.vwap"],
+            rows=volume_surge,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="rsi_oversold",
+            title="RSI Oversold",
+            description="Stocks with RSI below 35 - potential bounce candidates",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "extra.rsi"],
+            rows=rsi_oversold,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="rsi_overbought",
+            title="RSI Overbought",
+            description="Stocks with RSI above 65 - potential pullback candidates",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "extra.rsi"],
+            rows=rsi_overbought,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="fifty_two_week_high",
+            title="Near 52-Week High",
+            description="Stocks trading close to their 52-week high",
+            timeframe="daily",
+            columns=["symbol", "change_percent", "ltp", "extra.pct_from_high", "volume"],
+            rows=fifty_two_week_high,
+            last_updated=now,
+        ),
+        ScreenerWidget(
+            id="intraday_breakout",
+            title="Intraday Breakout",
+            description="15-minute timeframe stocks breaking out intraday",
+            timeframe="15_minute",
+            columns=["symbol", "change_percent", "ltp", "volume"],
+            rows=intraday_breakout,
+            last_updated=now,
+        ),
+    ]
+
+    return ScreenerDashboard(
+        id=dashboard_id,
+        name="System",
+        author="Gautam Pandey",
+        description="Multi-widget market scan dashboard (Chartink-style)",
+        widgets=widgets,
+    )
+
+
+@router.get("/dashboard/{dashboard_id}", response_model=ScreenerDashboard)
+async def get_scan_dashboard(dashboard_id: str):
+    """Return a Chartink-style multi-widget scan dashboard.
+
+    Aggregates several screener widgets (indices momentum, top gainers/losers,
+    volume surge, RSI extremes, 52-week highs, intraday breakouts) so the
+    frontend can render them side-by-side like chartink.com/dashboard/<id>.
+    """
+    logger.info("fetching_scan_dashboard", dashboard_id=dashboard_id)
+    return _build_dashboard(dashboard_id)
+
+
+
+@router.get("/screeners", response_model=List[str])
+async def get_screener_slugs():
+    """List available Chartink-style screener slugs."""
+    logger.info("listing_screeners")
+    return list_screener_slugs()
+
+
+@router.get("/screener/{slug}", response_model=ScreenerWidget)
+async def run_screener(slug: str, limit: int = Query(25, ge=1, le=100)):
+    """Run a Chartink-style screener by slug and return matching rows.
+
+    Mirrors screeners such as `potential-breakouts` and
+    `copy-morning-scanner-for-buy-nr7-based-breakout-8`, evaluating the real
+    formula over synthetic OHLC history.
+    """
+    logger.info("running_screener", slug=slug, limit=limit)
+    widget = build_screener_widget(slug, limit=limit)
+    if widget is None:
+        raise HTTPException(status_code=404, detail=f"Screener '{slug}' not found")
+    return widget
+
+
+
+@router.get("/nse-dashboard", response_model=ScreenerDashboard)
+async def get_nse_dashboard():
+    """Live NSE-backed scan dashboard (Chartink-style).
+
+    Combines live nsetools data (top gainers/losers, all indices, 52-week
+    high/low) with the real-formula Chartink screeners (NR7 breakout,
+    potential breakouts). Falls back to synthetic data when NSE is unreachable.
+    """
+    logger.info("fetching_nse_dashboard")
+    widgets = build_nse_dashboard()
+    return ScreenerDashboard(
+        id="nse-system",
+        name="System (NSE Live)",
+        author="ChartAnalytics",
+        description="Live NSE data via nsetools + Chartink-style formula screeners",
+        widgets=widgets,
+    )
+

@@ -92,3 +92,30 @@ class OISignal(BaseModel):
     pcr: float
     interpretation: str
     confidence: float
+
+
+class ScreenerRow(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    ltp: Optional[float] = None
+    change_percent: Optional[float] = None
+    volume: Optional[int] = None
+    extra: Optional[Dict[str, float]] = None
+
+
+class ScreenerWidget(BaseModel):
+    id: str
+    title: str
+    description: Optional[str] = None
+    timeframe: str = "daily"
+    columns: List[str] = ["symbol", "change_percent", "ltp", "volume"]
+    rows: List[ScreenerRow]
+    last_updated: datetime
+
+
+class ScreenerDashboard(BaseModel):
+    id: str
+    name: str
+    author: str
+    description: Optional[str] = None
+    widgets: List[ScreenerWidget]
