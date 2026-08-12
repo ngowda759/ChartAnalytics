@@ -40,8 +40,10 @@ If a PR is needed, create it via the GitHub REST API with the same token (POST t
 
 ## Current branch
 
-- `feature/chartink-nse-screener-dashboard` → open PR #17 targeting `main`.
-  Adds the Chartink-style screener dashboard backed by live NSE data (nsetools).
+- `fix/scan-dashboard-nse-data` → open PR #20 targeting `main`.
+  Fixes the scan dashboard failing to load (frontend→backend proxy gap in
+  next.config.mjs) and switches the dashboard's market indices to live NSE
+  data (nsetools) with a graceful mock fallback.
 
 ## Build / test commands
 
