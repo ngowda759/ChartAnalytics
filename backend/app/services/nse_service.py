@@ -182,6 +182,45 @@ def get_sectoral_indices(limit: int = 50) -> List[ScreenerRow]:
         return []
 
 
+# Major index symbols reported by nsetools' get_all_index_quote(). Used to
+# resolve a friendly name + OHLC into a TickerData for the market dashboard.
+_WANTED_INDEX_SYMBOLS = {
+    "NIFTY 50": "NIFTY 50",
+    "NIFTY BANK": "NIFTY Bank",
+    "NIFTY FIN SERVICE": "NIFTY Fin Services",
+    "NIFTY MIDCAP 100": "NIFTY Midcap 100",
+    "NIFTY SMLCAP 100": "NIFTY Smallcap 100",
+    "INDIA VIX": "India VIX",
+}
+
+
+def get_index_quotes(limit: int = 50) -> List[Dict]:
+    """Return raw major-index dicts from live NSE for the market dashboard.
+
+    Exposes the underlying nsetools index fields (last, percentChange, open,
+    high, low, previousClose, variation) so market_service can build TickerData
+    without depending on the ScreenerRow schema. Returns [] when NSE is down so
+    the caller can fall back to its configured provider.
+    """
+    nse = _get_nse()
+    if nse is None:
+        return []
+    try:
+        data = nse.get_all_index_quote() or []
+        wanted = set(_WANTED_INDEX_SYMBOLS)
+        picked = [d for d in data if (d.get("indexSymbol") or d.get("index")) in wanted]
+        if not picked:
+            return []
+        picked.sort(key=lambda d: list(_WANTED_INDEX_SYMBOLS).index(
+            d.get("indexSymbol") or d.get("index")
+        ))
+        logger.info("nse_index_quotes", count=len(picked[:limit]))
+        return picked[:limit]
+    except Exception as exc:  # pragma: no cover - network dependent
+        logger.warning("nse_index_quotes_failed", error=str(exc))
+        return []
+
+
 def get_52_week_high(limit: int = 25) -> List[ScreenerRow]:
     nse = _get_nse()
     if nse is None:

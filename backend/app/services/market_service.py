@@ -12,6 +12,7 @@ from app.integrations.data_providers.kite_connect_provider import KiteConnectPro
 from app.integrations.data_providers.base import TickerData, OHLCData, OptionChainData, BaseDataProvider
 from app.services.ai_market_engine import AIMarketEngine, MarketInsight
 from app.services.option_chain import OptionChainAnalyzer, OptionChainAnalysis
+from app.services.nse_service import get_index_quotes, _safe_float
 from app.core.config import settings
 
 logger = structlog.get_logger()
@@ -26,6 +27,17 @@ class CachedQuote:
     ttl_seconds: int = 60
 
 
+# Friendly display name per index symbol reported by nsetools.
+_INDEX_DISPLAY_NAMES = {
+    "NIFTY 50": "NIFTY 50",
+    "NIFTY BANK": "NIFTY Bank",
+    "NIFTY FIN SERVICE": "NIFTY Fin Services",
+    "NIFTY MIDCAP 100": "NIFTY Midcap 100",
+    "NIFTY SMLCAP 100": "NIFTY Smallcap 100",
+    "INDIA VIX": "India VIX",
+}
+
+
 @dataclass
 class MarketDataService:
     """Service for fetching and caching market data."""
@@ -35,7 +47,37 @@ class MarketDataService:
     _cache_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def get_indices(self) -> List[TickerData]:
-        """Get all major market indices."""
+        """Get all major market indices.
+
+        Prefers live NSE data via nsetools so the dashboard shows real prices.
+        Falls back to the configured provider (mock/Angel One/Kite) when NSE is
+        unreachable (e.g. outside market hours).
+        """
+        live = get_index_quotes()
+        if live:
+            now = datetime.utcnow()
+            return [
+                TickerData(
+                    symbol=item.get("indexSymbol") or item.get("index", ""),
+                    name=_INDEX_DISPLAY_NAMES.get(
+                        item.get("indexSymbol") or item.get("index"),
+                        item.get("index", ""),
+                    ),
+                    price=_safe_float(item.get("last"), 0) or 0,
+                    change=_safe_float(item.get("variation"), 0) or 0,
+                    change_percent=_safe_float(item.get("percentChange"), 0) or 0,
+                    open=_safe_float(item.get("open"), 0) or 0,
+                    high=_safe_float(item.get("high"), 0) or 0,
+                    low=_safe_float(item.get("low"), 0) or 0,
+                    close=_safe_float(item.get("last"), 0) or 0,
+                    previous_close=_safe_float(item.get("previousClose"), 0) or 0,
+                    volume=0,
+                    timestamp=now,
+                    metadata={"index": True, "source": "nsetools"},
+                )
+                for item in live
+            ]
+        logger.info("indices_fallback_to_provider", reason="nse_unreachable")
         symbols = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "SENSEX", "INDIA VIX"]
         return await self.get_quotes(symbols)
 
