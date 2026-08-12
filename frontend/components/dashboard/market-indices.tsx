@@ -6,82 +6,67 @@ import { Badge } from '@/components/ui/badge';
 import { cn, formatNumber, formatPercentage } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { MarketQuote } from '@/types';
+import { marketApi } from '@/lib/api';
+import { RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-// Mock data - replace with actual API calls
-const mockIndices: MarketQuote[] = [
-  {
-    symbol: 'NIFTY 50',
-    name: 'NIFTY 50',
-    price: 24567.85,
-    change: 123.45,
-    changePercent: 0.50,
-    open: 24450.00,
-    high: 24620.30,
-    low: 24420.15,
-    previousClose: 24444.40,
-    volume: 45678900,
-    timestamp: new Date(),
-  },
-  {
-    symbol: 'BANKNIFTY',
-    name: 'NIFTY Bank',
-    price: 52456.70,
-    change: -234.15,
-    changePercent: -0.45,
-    open: 52680.00,
-    high: 52780.25,
-    low: 52350.00,
-    previousClose: 52690.85,
-    volume: 34567890,
-    timestamp: new Date(),
-  },
-  {
-    symbol: 'FINNIFTY',
-    name: 'NIFTY Fin Services',
-    price: 23456.30,
-    change: 89.50,
-    changePercent: 0.38,
-    open: 23380.00,
-    high: 23520.40,
-    low: 23350.25,
-    previousClose: 23366.80,
-    volume: 12345678,
-    timestamp: new Date(),
-  },
-  {
-    symbol: 'SENSEX',
-    name: 'BSE Sensex',
-    price: 80789.45,
-    change: 456.78,
-    changePercent: 0.57,
-    open: 80450.00,
-    high: 80950.30,
-    low: 80350.15,
-    previousClose: 80332.67,
-    volume: 56789000,
-    timestamp: new Date(),
-  },
-  {
-    symbol: 'INDIA VIX',
-    name: 'India VIX',
-    price: 14.56,
-    change: -0.78,
-    changePercent: -5.09,
-    open: 15.20,
-    high: 15.45,
-    low: 14.30,
-    previousClose: 15.34,
-    volume: 8901234,
-    timestamp: new Date(),
-  },
-];
+const REFRESH_INTERVAL_MS = 60_000;
+
+// Backend /market/indices returns snake_case fields; map to the MarketQuote
+// shape consumed by the cards.
+function toMarketQuote(q: Record<string, unknown>): MarketQuote {
+  return {
+    symbol: String(q.symbol ?? ''),
+    name: String(q.name ?? q.symbol ?? ''),
+    price: Number(q.price ?? 0),
+    change: Number(q.change ?? 0),
+    changePercent: Number(q.change_percent ?? 0),
+    open: Number(q.open ?? 0),
+    high: Number(q.high ?? 0),
+    low: Number(q.low ?? 0),
+    previousClose: Number(q.previous_close ?? 0),
+    volume: Number(q.volume ?? 0),
+    timestamp: q.timestamp ? new Date(String(q.timestamp)) : new Date(),
+  };
+}
 
 export function MarketIndices() {
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<MarketQuote[]>({
+    queryKey: ['market-indices'],
+    queryFn: async () => {
+      const { data, error } = await marketApi.getIndices();
+      if (error || !data) {
+        throw new Error(error || 'Failed to load indices');
+      }
+      return data.map(toMarketQuote);
+    },
+    refetchInterval: REFRESH_INTERVAL_MS,
+    refetchOnWindowFocus: false,
+  });
+
+  const indices = data ?? [];
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-      {mockIndices.map((index) => (
-        <IndexCard key={index.symbol} data={index} />
-      ))}
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
+        <Button variant="outline" size="sm" onClick={() => refetch()}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {isLoading && indices.length === 0 ? (
+          <p className="col-span-full text-center text-muted-foreground">
+            Loading indices...
+          </p>
+        ) : isError && indices.length === 0 ? (
+          <p className="col-span-full text-center text-muted-foreground">
+            Unable to load indices. Click Refresh to retry.
+          </p>
+        ) : (
+          indices.map((index) => <IndexCard key={index.symbol} data={index} />)
+        )}
+      </div>
     </div>
   );
 }
