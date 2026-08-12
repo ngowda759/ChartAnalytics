@@ -66,3 +66,18 @@ npm run build
   top-level defs, 1 inside, no trailing blank line at EOF).
 - Git commits: prefix with type (`feat:`, `fix:`, `chore:`). Add
   `Co-authored-by: openhands <openhands@all-hands.dev>` to commit messages.
+
+## Scan dashboard (NSE) notes
+
+- The scan dashboard page (`frontend/app/(dashboard)/scan-dashboard/page.tsx`)
+  calls `GET /api/v1/scanner/nse-dashboard`, backed by
+  `app/services/nse_service.py::build_nse_dashboard()`.
+- `nsetools` is declared in `backend/requirements.txt` but is NOT preinstalled in
+  this environment — run `pip install -r requirements.txt` before any live NSE
+  call, or `_get_nse()` returns `None` and every `get_*` yields `[]`.
+- Every widget in `build_nse_dashboard()` must fall back to synthetic rows when
+  the live NSE source returns nothing (market closed / NSE blocks the request /
+  nsetools missing) so the dashboard is never empty. Fallback rows are tagged
+  `extra.source = "synthetic_fallback"` so the UI can distinguish them from live.
+- Tests live in `backend/tests/services/test_nse_service.py`; monkeypatch the
+  `get_*` getters to `[]` to simulate NSE being down.
