@@ -11,6 +11,9 @@ and pushing from this environment:
 - **Status:** `backend/.env` is gitignored (confirmed via `git check-ignore backend/.env`),
   so the token is NOT tracked and will not be committed. Do not remove it from `.gitignore`.
 - **Repository:** `ngowda759/ChartAnalytics` (remote `origin`).
+- **Documented:** `backend/.env.example` has a clearly documented `GITHUB_TOKEN` section
+  (placeholder only — no real value) describing where the real token goes and the agent
+  push flow. Check there first if you need to find the token.
 
 ### How an agent should push to git
 
