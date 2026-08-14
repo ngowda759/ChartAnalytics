@@ -1,0 +1,41 @@
+# MA Golden Cross — adapted from daily_stock_analysis (MIT).
+# MA5 crosses above MA10 (or MA10 above MA20) with volume confirmation.
+name: ma_golden_cross
+display_name: MA Golden Cross
+description: >-
+  Detects moving-average golden crosses with volume confirmation, a classic
+  trend reversal / continuation signal.
+category: trend
+aliases: [golden_cross, ma_cross]
+default_priority: 20
+market_regimes: [trending_up]
+
+rules:
+  # primary signal: MA5 crosses above MA10 within last 3 sessions
+  - kind: ma_cross_up
+    fast: 5
+    slow: 10
+    within_sessions: 3
+    weight: 0.5
+  # stronger signal: MA10 above MA20
+  - kind: ma_stack
+    periods: [10, 20]
+    order: asc
+    weight: 0.3
+  # volume confirmation: cross-day volume > 5-day average
+  - kind: volume_above_avg
+    avg_period: 5
+    min_ratio: 1.0
+    weight: 0.2
+
+scoring:
+  base: 60
+  ma5_cross_ma10_bonus: 10
+  ma10_cross_ma20_bonus: 8
+  macd_above_zero_bonus: 5
+  volume_confirm_bonus: 5
+
+risk:
+  stop_loss_pct: 0.03
+  target_pct: 0.06
+  ideal_buy: near_crossing_ma

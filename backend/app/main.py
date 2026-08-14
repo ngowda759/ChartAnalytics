@@ -17,6 +17,7 @@ from app.api import (
     risk,
     alerts,
     auth,
+    decision_signals,
 )
 
 # Configure structured logging
@@ -132,6 +133,11 @@ app.include_router(strategies.router, prefix="/api/v1/strategies", tags=["Strate
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI Engine"])
 app.include_router(risk.router, prefix="/api/v1/risk", tags=["Risk Management"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["Alerts"])
+app.include_router(
+    decision_signals.router,
+    prefix="/api/v1/decision-signals",
+    tags=["Decision Signals"],
+)
 
 
 @app.get("/")

@@ -1,0 +1,37 @@
+# Volume Breakout — adapted from daily_stock_analysis (MIT).
+# Price breaks above resistance on heavy volume (> 2x average).
+name: volume_breakout
+display_name: Volume Breakout
+description: >-
+  Detects volume-backed breakouts above a known resistance level. Best when
+  price is near a prior swing high or consolidation ceiling.
+category: trend
+aliases: [breakout, volume_spike_breakout]
+default_priority: 30
+market_regimes: [trending_up]
+
+rules:
+  # close above the 20-day high (resistance)
+  - kind: close_above_max_high
+    period: 20
+    weight: 0.4
+  # volume > 2x the 5-day average volume
+  - kind: volume_above_avg
+    avg_period: 5
+    min_ratio: 2.0
+    weight: 0.35
+  # strong close: closes in upper 30% of the day's range
+  - kind: strong_close
+    min_close_position: 0.7
+    weight: 0.25
+
+scoring:
+  base: 58
+  breakout_confirm_bonus: 12
+  sector_resonance_bonus: 5
+  volume_surge_bonus: 5
+
+risk:
+  stop_loss_pct: 0.03
+  target_pct: 0.08
+  ideal_buy: near_breakout

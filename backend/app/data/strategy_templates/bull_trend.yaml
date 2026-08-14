@@ -1,0 +1,33 @@
+# Bull Trend — adapted from daily_stock_analysis (MIT).
+# Confirmed uptrend: price above stacked moving averages with MACD support.
+name: bull_trend
+display_name: Bull Trend
+description: >-
+  Identifies confirmed uptrends using stacked moving averages (20>40>60),
+  price above the stack, and MACD above zero.
+category: trend
+aliases: [uptrend, trend_follow]
+default_priority: 25
+market_regimes: [trending_up]
+
+rules:
+  - kind: ma_stack
+    periods: [20, 40, 60]
+    order: asc
+    weight: 0.4
+  - kind: price_above_ma
+    period: 20
+    weight: 0.3
+  - kind: macd_above_zero
+    weight: 0.3
+
+scoring:
+  base: 62
+  stacked_ma_bonus: 8
+  price_above_ma20_bonus: 6
+  macd_above_zero_bonus: 6
+
+risk:
+  stop_loss_pct: 0.04
+  target_pct: 0.10
+  ideal_buy: near_ma20
