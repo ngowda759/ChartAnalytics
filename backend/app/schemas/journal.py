@@ -95,10 +95,13 @@ class PerformanceMetrics(BaseModel):
     average_win: float
     average_loss: float
     profit_factor: float
-    sharpe_ratio: float
-    max_drawdown: float
-    max_drawdown_percent: float
+    # Sharpe, drawdown and avg R:R require an equity/return series that is not
+    # derivable from a flat trade list; left null rather than fabricated.
+    sharpe_ratio: Optional[float] = None
+    max_drawdown: Optional[float] = None
+    max_drawdown_percent: Optional[float] = None
     total_pnl: float
     expectancy: float
-    avg_rr: float
-    monthly_returns: List[MonthlyReturn]
+    avg_rr: Optional[float] = None
+    monthly_returns: List[MonthlyReturn] = []
+    source: str = "journal"

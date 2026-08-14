@@ -26,7 +26,9 @@ export interface ScreenerRow {
   ltp?: number | null;
   change_percent?: number | null;
   volume?: number | null;
-  extra?: Record<string, number> | null;
+  // `extra` carries both numeric metrics and string metadata such as
+  // `source: "synthetic_fallback"`, so it must accept mixed value types.
+  extra?: Record<string, unknown> | null;
 }
 
 export interface ScreenerWidget {
@@ -45,6 +47,15 @@ export interface ScreenerDashboard {
   author: string;
   description?: string | null;
   widgets: ScreenerWidget[];
+}
+
+/** Envelope returned by /api/v1/scanner/nse-dashboard. */
+export interface ScreenerDashboardResponse {
+  success: boolean;
+  source: 'live' | 'synthetic_fallback' | 'unknown';
+  data: ScreenerDashboard;
+  warnings: string[];
+  generated_at?: string;
 }
 
 async function fetchApi<T>(
@@ -78,18 +89,88 @@ async function fetchApi<T>(
 }
 
 // Market Data API
+export interface MarketQuote {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  change_percent: number;
+  open: number;
+  high: number;
+  low: number;
+  previous_close: number;
+  volume: number;
+  timestamp: string;
+}
+
+export interface MarketStats {
+  advances: number | null;
+  declines: number | null;
+  unchanged: number | null;
+  india_vix: number | null;
+  india_vix_change_percent: number | null;
+  nifty_pcr: number | null;
+  source: 'live' | 'unavailable' | 'unknown';
+  timestamp: string;
+  is_stale: boolean;
+}
+
+export interface OHLCResponse {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export const marketApi = {
-  getQuotes: () => fetchApi<any[]>('/market/quotes'),
-  getIndices: () => fetchApi<any[]>('/market/indices'),
+  getQuotes: () => fetchApi<MarketQuote[]>('/market/quotes'),
+  // Indices are mapped to a camelCase MarketQuote by the consuming component;
+  // keep the raw snake_case backend shape here.
+  getIndices: () => fetchApi<Record<string, unknown>[]>('/market/indices'),
   getOHLC: (symbol: string, timeframe: string) =>
-    fetchApi<any[]>(`/market/ohlc/${symbol}?interval=${timeframe}`),
+    fetchApi<OHLCResponse[]>(`/market/ohlc/${symbol}?interval=${timeframe}`),
+  getStats: () => fetchApi<MarketStats>('/market/stats'),
 };
 
 // Option Chain API
+export interface OptionAnalysis {
+  symbol: string;
+  spot_price: number;
+  expiry_date: string;
+  key_metrics: {
+    pcr: number;
+    pcr_change: number;
+    max_pain: number;
+    atm_iv: number;
+    iv_skew: number;
+  };
+  oi_summary: {
+    total_call_oi: number;
+    total_put_oi: number;
+    net_oi: number;
+  };
+  outlook: {
+    trend: string;
+    confidence: number;
+    interpretation: string;
+  };
+  support_levels: number[];
+  resistance_levels: number[];
+  source: 'live' | 'synthetic';
+}
+
 export const optionsApi = {
-  getChain: (symbol: string) => fetchApi<any>(`/options/chain/${symbol}`),
-  getPCR: (symbol: string) => fetchApi<any>(`/options/pcr/${symbol}`),
-  getMaxPain: (symbol: string) => fetchApi<any>(`/options/max-pain/${symbol}`),
+  getChain: (symbol: string) => fetchApi<unknown>(`/options/chain/${symbol}`),
+  getPCR: (symbol: string) => fetchApi<unknown>(`/options/pcr/${symbol}`),
+  getMaxPain: (symbol: string) => fetchApi<unknown>(`/options/max-pain/${symbol}`),
+  getAnalysis: (symbol: string, expiry?: string) => {
+    const query = expiry ? `?expiry=${expiry}` : '';
+    return fetchApi<OptionAnalysis>(
+      `/options/analysis/${encodeURIComponent(symbol)}${query}`
+    );
+  },
 };
 
 // Indicators API
@@ -188,12 +269,33 @@ export const aiApi = {
 
 // Scanner API
 export const scannerApi = {
-  getScanResults: () => fetchApi<any[]>('/scanner/'),
-  getBreakouts: () => fetchApi<any[]>('/scanner/breakouts'),
-  getOIBuildups: () => fetchApi<any[]>('/scanner/oi-buildup'),
+  getScanResults: () => fetchApi<unknown[]>('/scanner/'),
+  getBreakouts: () => fetchApi<unknown[]>('/scanner/breakouts'),
+  getOIBuildups: () => fetchApi<unknown[]>('/scanner/oi-buildup'),
   getDashboard: (dashboardId: string) =>
     fetchApi<ScreenerDashboard>(`/scanner/dashboard/${dashboardId}`),
-  getNseDashboard: () => fetchApi<ScreenerDashboard>('/scanner/nse-dashboard'),
+  // The backend returns a {success, source, data, warnings} envelope. Unwrap it
+  // so callers receive the ScreenerDashboard while preserving source/warnings.
+  getNseDashboard: async (): Promise<
+    ApiResponse<ScreenerDashboard | null> & {
+      source?: string;
+      warnings?: string[];
+      generated_at?: string;
+    }
+  > => {
+    const res = await fetchApi<ScreenerDashboardResponse>(
+      '/scanner/nse-dashboard'
+    );
+    if (res.error || !res.data) {
+      return { data: null, error: res.error ?? 'No dashboard data' };
+    }
+    return {
+      data: res.data.data,
+      source: res.data.source,
+      warnings: res.data.warnings,
+      generated_at: res.data.generated_at,
+    };
+  },
   getScreenerSlugs: () => fetchApi<string[]>('/scanner/screeners'),
   runScreener: (slug: string, limit = 25) =>
     fetchApi<ScreenerWidget>(`/scanner/screener/${encodeURIComponent(slug)}?limit=${limit}`),
@@ -265,6 +367,10 @@ export interface DecisionSignalListResponse {
   hold_count: number;
   avoid_count: number;
   signals: DecisionSignal[];
+  generated_at: string;
+  data_timestamp?: string | null;
+  source: string;
+  is_stale: boolean;
 }
 
 export const decisionSignalsApi = {
@@ -273,6 +379,7 @@ export const decisionSignalsApi = {
     strategy?: string;
     min_score?: number;
     limit?: number;
+    refresh?: boolean;
   }) => {
     const qs = new URLSearchParams();
     if (params?.action) qs.set('action', params.action);
@@ -280,6 +387,7 @@ export const decisionSignalsApi = {
     if (params?.min_score !== undefined)
       qs.set('min_score', String(params.min_score));
     if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.refresh) qs.set('refresh', 'true');
     const query = qs.toString();
     return fetchApi<DecisionSignalListResponse>(
       `/decision-signals/signals${query ? `?${query}` : ''}`
@@ -291,11 +399,27 @@ export const decisionSignalsApi = {
 };
 
 // Agent Analysis API (TradingAgents-style pipeline)
+export interface AgentAnalysisListResponse {
+  total: number;
+  buy_count: number;
+  sell_count: number;
+  hold_count: number;
+  results: Record<string, unknown>[];
+  generated_at: string;
+  data_timestamp?: string | null;
+  source: string;
+  is_stale: boolean;
+}
+
 export const agentAnalysisApi = {
-  list: (limit = 25) =>
-    fetchApi<any>(`/agent-analysis/?limit=${limit}`),
-  get: (symbol: string) =>
-    fetchApi<any>(`/agent-analysis/${encodeURIComponent(symbol)}`),
+  list: (limit = 25, refresh = false) =>
+    fetchApi<AgentAnalysisListResponse>(
+      `/agent-analysis/?limit=${limit}${refresh ? '&refresh=true' : ''}`
+    ),
+  get: (symbol: string, refresh = false) =>
+    fetchApi<Record<string, unknown>>(
+      `/agent-analysis/${encodeURIComponent(symbol)}${refresh ? '?refresh=true' : ''}`
+    ),
 };
 
 export default {

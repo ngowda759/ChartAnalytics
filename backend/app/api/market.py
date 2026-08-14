@@ -6,12 +6,14 @@ import structlog
 from app.schemas.market import (
     IndexQuote,
     MarketQuote,
+    MarketStats,
     OHLC,
     HistoricalData,
     WatchlistItem,
     WatchlistCreate,
 )
 from app.services.market_service import get_market_service
+from app.services.nse_service import get_index_quotes
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -67,6 +69,70 @@ async def get_quote(symbol: str, force_refresh: bool = False):
         previous_close=quote.previous_close,
         volume=quote.volume,
         timestamp=quote.timestamp,
+    )
+
+
+def _safe_float(value, default=None):
+    try:
+        if value in (None, "", "-", "NA"):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@router.get("/stats", response_model=MarketStats)
+async def get_market_stats():
+    """Aggregated market-breadth statistics for the main dashboard.
+
+    Derives advances/declines/unchanged and India VIX from live NSE index
+    quotes. Nifty PCR is best-effort from the option-chain service. Every field
+    is nullable: when NSE is unreachable the UI shows "N/A" rather than
+    fabricated numbers, and ``source`` becomes "unavailable".
+    """
+    logger.info("fetching_market_stats")
+
+    raw = get_index_quotes()
+    now = datetime.utcnow()
+
+    if not raw:
+        return MarketStats(
+            source="unavailable",
+            timestamp=now,
+            is_stale=False,
+        )
+
+    # Sum constituent breadth across the broad-market indices that report it.
+    advances = sum(int(_safe_float(d.get("advances"), 0) or 0) for d in raw)
+    declines = sum(int(_safe_float(d.get("declines"), 0) or 0) for d in raw)
+    unchanged = sum(int(_safe_float(d.get("unchanged"), 0) or 0) for d in raw)
+
+    # India VIX is one of the picked index quotes.
+    vix_item = next((d for d in raw if (d.get("indexSymbol") or d.get("index")) == "INDIA VIX"), None)
+    india_vix = _safe_float(vix_item.get("last")) if vix_item else None
+    vix_chg = _safe_float(vix_item.get("percentChange")) if vix_item else None
+
+    # Nifty PCR is best-effort; leave null if the option chain is unavailable.
+    nifty_pcr: Optional[float] = None
+    try:
+        service = get_market_service()
+        analysis = await service.analyze_option_chain("NIFTY")
+        if analysis:
+            nifty_pcr = analysis.pcr
+    except Exception as exc:  # pragma: no cover - provider dependent
+        logger.info("market_stats_pcr_unavailable", error=str(exc))
+
+    has_breadth = advances or declines
+    return MarketStats(
+        advances=advances if has_breadth else None,
+        declines=declines if has_breadth else None,
+        unchanged=unchanged if has_breadth else None,
+        india_vix=india_vix,
+        india_vix_change_percent=vix_chg,
+        nifty_pcr=nifty_pcr,
+        source="live",
+        timestamp=now,
+        is_stale=False,
     )
 
 

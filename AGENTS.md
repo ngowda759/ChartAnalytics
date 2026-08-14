@@ -58,9 +58,26 @@ npm install
 npm run lint
 npm run type-check   # tsc --noEmit
 npm run build
+npm test             # jest (next/jest); __tests__/*.test.tsx
 ```
 
 ## Conventions
+
+- Frontend tests use `next/jest` (`jest.config.js`) with jsdom. The `@/*` path
+  alias is mapped via `moduleNameMapper`. Test files live in
+  `frontend/__tests__/*.test.tsx`; shared render helpers in
+  `frontend/__tests__/helpers/` are excluded from the test runner. `tsconfig.json`
+  excludes `__tests__`/`jest.*` so the production `tsc`/build type-check is not
+  polluted by `@types/jest` globals (jest uses babel, no type-check at runtime).
+- Dashboard tiles use the unified tile-state contract `useTileQuery`
+  (`frontend/lib/useTileQuery.ts`) over React Query: `{data, loading, error,
+  updatedAt, source, stale, refetch}`. Every rewritten tile renders Loading →
+  Success(real data) → Cached(stale indicator) → Fallback(labelled) → Error(retry).
+  Never fabricate metrics: if the backend does not provide a value, show "N/A".
+- API base URL is centralized in `frontend/lib/api.ts::getApiBaseUrl()`
+  (env `NEXT_PUBLIC_API_URL`, else relative `/api/v1`, else localhost for SSR).
+  Never hardcode `localhost:8000` in components or construct `/api/options/...`
+  double-prefixed paths — `fetchApi` already prepends `/api/v1`.
 
 - Python: PEP 8 enforced via `flake8 app` in CI. Keep blank lines to PEP 8 (2 between
   top-level defs, 1 inside, no trailing blank line at EOF).

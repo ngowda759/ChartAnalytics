@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -100,7 +100,10 @@ class ScreenerRow(BaseModel):
     ltp: Optional[float] = None
     change_percent: Optional[float] = None
     volume: Optional[int] = None
-    extra: Optional[Dict[str, float]] = None
+    # `extra` carries both numeric OHLC fields (open/high/low/...) and string
+    # metadata such as {"source": "synthetic_fallback"}. Typed as a free-form
+    # dict so metadata is not coerced/broken by a numeric-only type contract.
+    extra: Optional[Dict[str, Any]] = None
 
 
 class ScreenerWidget(BaseModel):
@@ -119,3 +122,20 @@ class ScreenerDashboard(BaseModel):
     author: str
     description: Optional[str] = None
     widgets: List[ScreenerWidget]
+
+
+class ScreenerDashboardResponse(BaseModel):
+    """Envelope for the NSE scan dashboard.
+
+    ``source`` is "live" when every dataset came from NSE, "synthetic_fallback"
+    when any widget used fallback data. ``warnings`` lists unavailable datasets.
+    ``generated_at`` / ``data_timestamp`` let the UI show freshness + staleness.
+    """
+
+    success: bool = True
+    source: str = "live"
+    data: ScreenerDashboard
+    warnings: List[str] = []
+    generated_at: datetime
+    data_timestamp: Optional[datetime] = None
+    is_stale: bool = False

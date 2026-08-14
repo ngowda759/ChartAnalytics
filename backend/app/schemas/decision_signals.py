@@ -57,6 +57,10 @@ class DecisionSignalListResponse(BaseModel):
     hold_count: int
     avoid_count: int
     signals: List[DecisionSignal]
+    generated_at: datetime
+    data_timestamp: Optional[datetime] = None
+    source: str = "synthetic"
+    is_stale: bool = False
 
 
 class DecisionSignalFilter(BaseModel):
