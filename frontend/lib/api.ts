@@ -290,6 +290,14 @@ export const decisionSignalsApi = {
     fetchApi<DecisionSignal>(`/decision-signals/signals/${encodeURIComponent(signalId)}`),
 };
 
+// Agent Analysis API (TradingAgents-style pipeline)
+export const agentAnalysisApi = {
+  list: (limit = 25) =>
+    fetchApi<any>(`/agent-analysis/?limit=${limit}`),
+  get: (symbol: string) =>
+    fetchApi<any>(`/agent-analysis/${encodeURIComponent(symbol)}`),
+};
+
 export default {
   market: marketApi,
   options: optionsApi,
@@ -301,4 +309,5 @@ export default {
   alerts: alertsApi,
   strategies: strategiesApi,
   decisionSignals: decisionSignalsApi,
+  agentAnalysis: agentAnalysisApi,
 };

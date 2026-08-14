@@ -18,6 +18,7 @@ from app.api import (
     alerts,
     auth,
     decision_signals,
+    agent_analysis,
 )
 
 # Configure structured logging
@@ -137,6 +138,11 @@ app.include_router(
     decision_signals.router,
     prefix="/api/v1/decision-signals",
     tags=["Decision Signals"],
+)
+app.include_router(
+    agent_analysis.router,
+    prefix="/api/v1/agent-analysis",
+    tags=["Agent Analysis"],
 )
 
 
