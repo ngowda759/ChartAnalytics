@@ -4,31 +4,28 @@ services:
     env: python
     region: singapore
     plan: free
-    pythonVersion: "3.13.0"
+    # Match the Python version used by the Dockerfile and CI (3.11). 3.13 can
+    # lack wheels for some pinned deps in requirements.lock.txt.
+    pythonVersion: "3.11.9"
     buildCommand: cd backend && pip install --no-cache-dir -r requirements.lock.txt
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: ENVIRONMENT
         value: production
-      - key: FIREBASE_PROJECT_ID
+      - key: DEBUG
+        value: "false"
+      # CORS only matters if the browser calls the backend directly. Through the
+      # Next.js server-side rewrite proxy (BACKEND_URL on Vercel) the browser
+      # never touches the backend, so this is optional. Listed here so direct
+      # calls from the Vercel frontend origin are also allowed if needed later.
+      - key: CORS_ORIGINS
+        value: '["https://chartanalytics.vercel.app","https://tradingassistant.com"]'
+      # Optional integrations — leave unset for read-only NSE / agent-analysis
+      # endpoints (they need no external credentials).
+      - key: FIRESTORE_PROJECT_ID
         sync: false
-      - key: FIREBASE_PRIVATE_KEY
+      - key: FIRESTORE_EMULATOR_HOST
         sync: false
-      - key: FIREBASE_CLIENT_EMAIL
+      - key: REDIS_URL
         sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-
-cron:
-  - name: market-data-update
-    url: https://chartanalytics-api.onrender.com/api/v1/market/update
-    schedule: "*/5 * * * *"
-    description: Update market data every 5 minutes
-    headers:
-      - key: Authorization
-        value: ${CRON_SECRET}
