@@ -3,6 +3,11 @@
 from datetime import datetime
 
 import pytest
+import sys
+import os
+
+# Add parent directory to path (matches existing test convention; no conftest.py)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.schemas.agent_analysis import (
     AgentAnalysisResult,
