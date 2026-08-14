@@ -13,35 +13,44 @@ import { toast } from 'sonner';
 const DEFAULT_DASHBOARD_ID = 'nse-system';
 const REFRESH_INTERVAL_MS = 60_000;
 
+interface DashboardResult {
+  dashboard: ScreenerDashboardType;
+  source?: string;
+  warnings?: string[];
+}
+
 export default function ScanDashboardPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showChartPreview, setShowChartPreview] = useState(false);
   const [copied, setCopied] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const fetchDashboard = useCallback(async () => {
-    const { data, error } = await scannerApi.getNseDashboard();
+  const fetchDashboard = useCallback(async (): Promise<DashboardResult> => {
+    const { data, error, source, warnings } = await scannerApi.getNseDashboard();
     if (error || !data) {
       throw new Error(error || 'Failed to load dashboard');
     }
-    return data;
+    return { dashboard: data, source, warnings };
   }, []);
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery<ScreenerDashboardType>({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery<DashboardResult>({
     queryKey: ['scan-dashboard', DEFAULT_DASHBOARD_ID],
     queryFn: fetchDashboard,
     refetchInterval: autoRefresh ? REFRESH_INTERVAL_MS : false,
     refetchOnWindowFocus: false,
   });
 
+  const dashboard = data?.dashboard;
+  const isFallback = data?.source && data.source !== 'live';
+
   useEffect(() => {
     if (data) setLastUpdated(new Date());
   }, [data]);
 
   const handleCopy = async () => {
-    if (!data) return;
+    if (!dashboard) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(dashboard, null, 2));
       setCopied(true);
       toast.success('Dashboard JSON copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
@@ -57,14 +66,24 @@ export default function ScanDashboardPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold tracking-tight">
-              {data?.name ?? 'System'}
+              {dashboard?.name ?? 'System'}
             </h1>
-            <Badge variant="outline">by {data?.author ?? 'ChartAnalytics'}</Badge>
+            <Badge variant="outline">by {dashboard?.author ?? 'ChartAnalytics'}</Badge>
+            {isFallback && (
+              <Badge variant="outline" className="border-yellow-500/40 text-yellow-600">
+                Fallback data
+              </Badge>
+            )}
           </div>
           <p className="mt-1 text-muted-foreground">
-            {data?.description ??
+            {dashboard?.description ??
               'Multi-widget market scan dashboard (Chartink-style) with live NSE data'}
           </p>
+          {isFallback && data?.warnings && data.warnings.length > 0 && (
+            <p className="mt-1 text-xs text-yellow-600">
+              {data.warnings.join('; ')}
+            </p>
+          )}
           {lastUpdated && (
             <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
@@ -102,7 +121,7 @@ export default function ScanDashboardPage() {
       </div>
 
       {/* Loading state */}
-      {isLoading && !data && (
+      {isLoading && !dashboard && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Card key={i} className="h-64 animate-pulse bg-muted/40" />
@@ -110,7 +129,7 @@ export default function ScanDashboardPage() {
         </div>
       )}
 
-      {isError && !data && (
+      {isError && !dashboard && (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             Unable to load the scan dashboard. The NSE data source may be unavailable
@@ -120,9 +139,9 @@ export default function ScanDashboardPage() {
       )}
 
       {/* Widgets grid */}
-      {data && (
+      {dashboard && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.widgets.map((widget) => (
+          {dashboard.widgets.map((widget) => (
             <ScreenerWidget
               key={widget.id}
               widget={widget}

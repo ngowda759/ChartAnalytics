@@ -95,7 +95,7 @@ export default function AgentAnalysisPage() {
   const fetchList = async () => {
     const { data, error } = await agentAnalysisApi.list(25);
     if (error || !data) throw new Error(error || 'Failed to load agent analyses');
-    return data as AgentAnalysisList;
+    return data as unknown as AgentAnalysisList;
   };
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<AgentAnalysisList>({
@@ -109,7 +109,7 @@ export default function AgentAnalysisPage() {
       toast.error(error || 'Failed to load analysis');
       return;
     }
-    setSelected(data as AgentAnalysisResult);
+    setSelected(data as unknown as AgentAnalysisResult);
   };
 
   return (

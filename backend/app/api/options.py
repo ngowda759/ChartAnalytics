@@ -126,6 +126,7 @@ async def get_option_chain(
         total_put_oi = sum(p.oi for p in puts)
         pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 1.0
         max_pain = spot_price + random.randint(-200, 200)
+        logger.warning("option_chain_using_synthetic_fallback", symbol=symbol)
 
     return OptionChain(
         symbol=symbol.upper(),
@@ -155,7 +156,12 @@ async def get_option_analysis(
 
     if not analysis:
         raise HTTPException(
-            status_code=404, detail=f"Option analysis not available for {symbol}"
+            status_code=404,
+            detail=(
+                f"Option analysis not available for {symbol}. Live option data is "
+                "currently unavailable (no real data provider configured or market "
+                "closed)."
+            ),
         )
 
     return {
@@ -181,6 +187,7 @@ async def get_option_analysis(
         },
         "support_levels": analysis.support_levels,
         "resistance_levels": analysis.resistance_levels,
+        "source": "live",
     }
 
 

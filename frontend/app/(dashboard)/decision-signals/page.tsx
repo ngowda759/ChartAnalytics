@@ -162,6 +162,14 @@ export default function DecisionSignalsPage() {
             Scored, actionable trade ideas from strategy templates — action, score,
             entry / stop / target and matched reasons per symbol.
           </p>
+          {data?.source && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Source: <span className="capitalize">{data.source}</span>
+              {data.is_stale && ' (stale)'}
+              {data.generated_at &&
+                ` · generated ${new Date(data.generated_at).toLocaleString('en-IN')}`}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button

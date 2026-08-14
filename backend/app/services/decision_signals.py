@@ -17,6 +17,7 @@ from app.schemas.decision_signals import (
     DecisionSignal,
     DecisionStatus,
 )
+from app.services.cache import TTLCache
 from app.services.strategy_templates import (
     StrategyEval,
     evaluate_all,
@@ -29,6 +30,13 @@ logger = structlog.get_logger()
 
 # Signals are considered stale after one trading day.
 SIGNAL_TTL = timedelta(days=1)
+
+# The screener engine's synthetic OHLC is seeded per symbol + hour, so signal
+# evaluations are stable within an hour. Cache the (expensive) full evaluation
+# for ~30 minutes so dashboard refreshes don't regenerate 6 templates x 30
+# symbols on every request, while still picking up hourly drift.
+_SIGNALS_CACHE: TTLCache = TTLCache(ttl=30 * 60)
+_SIGNALS_CACHE_KEY = "all_signals_v1"
 
 
 def _risk_reward(entry: Optional[float], stop: Optional[float], target: Optional[float]) -> Optional[float]:
@@ -71,23 +79,47 @@ def _eval_to_signal(idx: int, ev: StrategyEval) -> DecisionSignal:
 def build_signals(
     strategy: Optional[str] = None,
     limit_per_template: int = 25,
+    use_cache: bool = True,
 ) -> List[DecisionSignal]:
-    evals: List[StrategyEval] = []
+    """Build decision signals, reusing a short-lived cache for the full universe.
+
+    The expensive part is evaluating all 6 templates across 30 symbols. When no
+    strategy filter is applied we serve the cached full evaluation; filtered
+    requests reuse that same cached set and filter in memory. ``use_cache=False``
+    forces a fresh regeneration (used by tests + manual refresh).
+    """
     if strategy:
         tpl = load_template(strategy)
         if tpl is None:
             return []
         evals = evaluate_template_universe(tpl, limit=limit_per_template)
-    else:
-        evals = evaluate_all(limit_per_template=limit_per_template)
+        signals = [_eval_to_signal(i, ev) for i, ev in enumerate(evals)]
+        return signals
 
+    cached = _SIGNALS_CACHE.get(_SIGNALS_CACHE_KEY) if use_cache else None
+    if cached is not None:
+        return cached
+
+    evals = evaluate_all(limit_per_template=limit_per_template)
     signals = [_eval_to_signal(i, ev) for i, ev in enumerate(evals)]
-    logger.info(
-        "decision_signals_built",
-        strategy=strategy,
-        count=len(signals),
-    )
+    _SIGNALS_CACHE.set(_SIGNALS_CACHE_KEY, signals)
+    logger.info("decision_signals_built", strategy=strategy, count=len(signals))
     return signals
+
+
+def signals_cache_age_seconds() -> Optional[float]:
+    """Seconds since the cached signal set was written, or None if not cached."""
+    import time
+
+    entry = _SIGNALS_CACHE._store.get(_SIGNALS_CACHE_KEY)  # noqa: SLF001 - introspection
+    if entry is None:
+        return None
+    _, expires_at = entry
+    return max(0.0, time.monotonic() - (expires_at - _SIGNALS_CACHE._ttl))  # noqa: SLF001
+
+
+def invalidate_signals_cache() -> None:
+    _SIGNALS_CACHE.clear()
 
 
 def list_signals(

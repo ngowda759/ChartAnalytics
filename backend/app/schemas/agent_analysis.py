@@ -107,6 +107,8 @@ class AgentAnalysisResult(BaseModel):
     risk_debate: DebateResult
     final_decision: PortfolioDecision
     confidence: float = Field(..., ge=0.0, le=1.0)
+    source: str = "synthetic"
+    is_stale: bool = False
 
 
 class AgentAnalysisListResponse(BaseModel):
@@ -115,3 +117,7 @@ class AgentAnalysisListResponse(BaseModel):
     sell_count: int
     hold_count: int
     results: List[AgentAnalysisResult]
+    generated_at: datetime
+    data_timestamp: Optional[datetime] = None
+    source: str = "synthetic"
+    is_stale: bool = False

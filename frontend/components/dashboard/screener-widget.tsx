@@ -31,7 +31,12 @@ const COLUMN_LABELS: Record<string, string> = {
 
 function getExtra(row: ScreenerRow, dotted: string): number | null {
   const [, field] = dotted.split('extra.');
-  return row.extra?.[field] ?? null;
+  const raw = row.extra?.[field];
+  if (raw === null || raw === undefined) return null;
+  // `extra` mixes numeric metrics and string metadata (e.g. source); only
+  // expose numeric values to the numeric accessor.
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 function buildColumns(keys: string[]): ColumnMeta[] {

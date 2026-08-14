@@ -21,6 +21,24 @@ class IndexQuote(MarketQuote):
     is_index: bool = True
 
 
+class MarketStats(BaseModel):
+    """Aggregated market-breadth statistics for the main dashboard.
+
+    Fields are nullable so the UI can show "N/A" instead of fabricated values
+    when live NSE data is unavailable (e.g. outside market hours).
+    """
+
+    advances: Optional[int] = None
+    declines: Optional[int] = None
+    unchanged: Optional[int] = None
+    india_vix: Optional[float] = None
+    india_vix_change_percent: Optional[float] = None
+    nifty_pcr: Optional[float] = None
+    source: str = "live"
+    timestamp: datetime
+    is_stale: bool = False
+
+
 class OHLC(BaseModel):
     timestamp: datetime
     open: float

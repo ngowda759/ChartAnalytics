@@ -15,6 +15,7 @@ from app.schemas.scanner import (
     VolumeSignal,
     OISignal,
     ScreenerDashboard,
+    ScreenerDashboardResponse,
     ScreenerWidget,
     ScreenerRow,
 )
@@ -582,20 +583,32 @@ async def run_screener(slug: str, limit: int = Query(25, ge=1, le=100)):
     return widget
 
 
-@router.get("/nse-dashboard", response_model=ScreenerDashboard)
+@router.get("/nse-dashboard", response_model=ScreenerDashboardResponse)
 async def get_nse_dashboard():
     """Live NSE-backed scan dashboard (Chartink-style).
 
     Combines live nsetools data (top gainers/losers, all indices, 52-week
     high/low) with the real-formula Chartink screeners (NR7 breakout,
-    potential breakouts). Falls back to synthetic data when NSE is unreachable.
+    potential breakouts). Each NSE dataset is fetched with a bounded timeout and
+    falls back to clearly-labelled synthetic data when NSE is unreachable, so the
+    endpoint always returns a valid response. ``source`` and ``warnings`` tell the
+    UI exactly how much of the data is live.
     """
     logger.info("fetching_nse_dashboard")
-    widgets = build_nse_dashboard()
-    return ScreenerDashboard(
+    widgets, source, warnings = await build_nse_dashboard()
+    dashboard = ScreenerDashboard(
         id="nse-system",
-        name="System (NSE Live)",
+        name="System (NSE Live)" if source == "live" else "System (NSE Fallback)",
         author="ChartAnalytics",
         description="Live NSE data via nsetools + Chartink-style formula screeners",
         widgets=widgets,
+    )
+    return ScreenerDashboardResponse(
+        success=True,
+        source=source,
+        data=dashboard,
+        warnings=warnings,
+        generated_at=_dt.utcnow(),
+        data_timestamp=_dt.utcnow(),
+        is_stale=False,
     )

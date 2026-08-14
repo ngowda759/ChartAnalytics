@@ -10,7 +10,6 @@ from app.schemas.journal import (
     TradeUpdate,
     TradeFilters,
     PerformanceMetrics,
-    MonthlyReturn,
 )
 
 logger = structlog.get_logger()
@@ -215,44 +214,9 @@ async def get_performance_metrics(user_id: str = "user_1"):
         average_win=round(avg_win, 2),
         average_loss=round(avg_loss, 2),
         profit_factor=round(profit_factor, 2),
-        sharpe_ratio=round(random.uniform(0.5, 2.5), 2),
-        max_drawdown=round(random.uniform(5, 15), 2),
-        max_drawdown_percent=round(random.uniform(8, 20), 2),
         total_pnl=round(total_pnl, 2),
         expectancy=round(
             (win_rate / 100 * avg_win) - ((1 - win_rate / 100) * abs(avg_loss)), 2
         ),
-        avg_rr=round(random.uniform(1.2, 2.5), 2),
-        monthly_returns=[
-            MonthlyReturn(
-                month="Jan",
-                return_value=round(random.uniform(-5, 10), 2),
-                trades=random.randint(5, 20),
-            ),
-            MonthlyReturn(
-                month="Feb",
-                return_value=round(random.uniform(-3, 8), 2),
-                trades=random.randint(5, 20),
-            ),
-            MonthlyReturn(
-                month="Mar",
-                return_value=round(random.uniform(-8, 12), 2),
-                trades=random.randint(5, 20),
-            ),
-            MonthlyReturn(
-                month="Apr",
-                return_value=round(random.uniform(-2, 15), 2),
-                trades=random.randint(5, 20),
-            ),
-            MonthlyReturn(
-                month="May",
-                return_value=round(random.uniform(-10, 5), 2),
-                trades=random.randint(5, 20),
-            ),
-            MonthlyReturn(
-                month="Jun",
-                return_value=round(random.uniform(-5, 8), 2),
-                trades=random.randint(5, 20),
-            ),
-        ],
+        source="journal",
     )

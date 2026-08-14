@@ -10,8 +10,10 @@ Reference: https://github.com/vsjha18/nsetools
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import structlog
 
@@ -20,6 +22,29 @@ from app.schemas.scanner import ScreenerRow, ScreenerWidget
 logger = structlog.get_logger()
 
 _nse = None
+
+# NSE calls are synchronous (nsetools uses requests under the hood) and can hang
+# when NSE is slow/unreachable. Bound how long any single dataset fetch may take
+# before we give up and fall back. Tuned to be well under typical browser timeouts.
+NSE_TIMEOUT_SECONDS = 8.0
+# Small thread pool so multiple NSE datasets can be fetched in parallel without
+# starving the FastAPI event loop. Bounded to avoid hammering NSE.
+_NSE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="nse")
+
+
+def _call_with_timeout(fn: Callable, *args, timeout: float = NSE_TIMEOUT_SECONDS, **kwargs):
+    """Run a sync callable with a hard timeout.
+
+    If the call exceeds ``timeout`` it is abandoned (the underlying thread keeps
+    running until nsetools returns, but we stop waiting) and ``None`` is returned
+    so the caller can fall back. This keeps the dashboard responsive even when a
+    single NSE endpoint hangs.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        return loop.run_in_executor(_NSE_EXECUTOR, lambda: fn(*args, **kwargs))
+    except RuntimeError:  # pragma: no cover - no running loop
+        return fn(*args, **kwargs)
 
 
 def _get_nse():
@@ -346,17 +371,75 @@ def build_nse_widget(widget_id: str, title: str, description: str, rows: List[Sc
     )
 
 
-def build_nse_dashboard() -> List[ScreenerWidget]:
+# Dataset labels used for per-widget source tracking + warnings.
+_DATASET_LABELS = {
+    "indices": "broad-market indices",
+    "sectoral": "sectoral indices",
+    "gainers": "top gainers",
+    "losers": "top losers",
+    "high52": "52-week highs",
+    "low52": "52-week lows",
+    "nr7": "NR7 breakout candidates",
+    "breakouts": "potential breakouts",
+}
+
+
+async def _fetch_with_timeout(fn, *args) -> List[ScreenerRow]:
+    """Run a sync NSE getter in the thread pool with a hard timeout.
+
+    Returns whatever the getter returns (live rows, or [] when NSE is down) so
+    the caller can decide whether to fall back. Timeouts/exceptions also yield [].
+    """
+    try:
+        result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(_NSE_EXECUTOR, lambda: fn(*args)),
+            timeout=NSE_TIMEOUT_SECONDS,
+        )
+        return result or []
+    except asyncio.TimeoutError:
+        logger.warning("nse_dataset_timeout", dataset=getattr(fn, "__name__", "unknown"))
+        return []
+    except Exception as exc:  # pragma: no cover - network dependent
+        logger.warning("nse_dataset_failed", dataset=getattr(fn, "__name__", "unknown"), error=str(exc))
+        return []
+
+
+async def build_nse_dashboard() -> Tuple[List[ScreenerWidget], str, List[str]]:
     """Build a dashboard of NSE-backed screener widgets.
 
-    Each widget tries live NSE data first and falls back to synthetic rows when
-    the live source is unreachable (market closed, NSE blocking the request, or
-    nsetools missing) so the dashboard is never empty.
+    Each widget tries live NSE data first (fetched in parallel with a bounded
+    timeout) and falls back to synthetic rows when the live source is
+    unreachable (market closed, NSE blocking the request, nsetools missing, or a
+    dataset timing out) so the dashboard is never empty.
+
+    Returns ``(widgets, source, warnings)`` where ``source`` is "live" when every
+    dataset was live, "synthetic_fallback" when any widget used fallback data,
+    and ``warnings`` lists the datasets that were unavailable.
     """
+    warnings: List[str] = []
+    any_fallback = False
+
+    async def _dataset(fn, *args, key: str) -> List[ScreenerRow]:
+        rows = await _fetch_with_timeout(fn, *args)
+        if not rows:
+            warnings.append(f"NSE {key} unavailable; showing fallback data")
+            any_fallback = True
+            return None  # signal fallback needed
+        return rows
+
     widgets: List[ScreenerWidget] = []
 
-    indices = get_all_indices(50) or _fallback_indices()
-    # indices momentum: ranked by absolute % change
+    # Fetch independent datasets in parallel (bounded by the thread pool).
+    indices_r, sectoral_r, gainers_r, losers_r, high52_r, low52_r = await asyncio.gather(
+        _dataset(get_all_indices, 50, key="broad-market indices"),
+        _dataset(get_sectoral_indices, 50, key="sectoral indices"),
+        _dataset(get_top_gainers, 20, key="top gainers"),
+        _dataset(get_top_losers, 20, key="top losers"),
+        _dataset(get_52_week_high, 25, key="52-week highs"),
+        _dataset(get_52_week_low, 25, key="52-week lows"),
+    )
+
+    indices = indices_r or _fallback_indices()
     indices_momentum = sorted(indices, key=lambda r: abs(r.change_percent or 0), reverse=True)[:8]
     widgets.append(
         build_nse_widget(
@@ -368,8 +451,7 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    # Sectoral winners: only SECTORAL indices (NIFTY IT/BANK/AUTO/...) that are up
-    sectoral = get_sectoral_indices(50) or _fallback_sectoral_indices()
+    sectoral = sectoral_r or _fallback_sectoral_indices()
     sectoral_winners = [r for r in sectoral if (r.change_percent or 0) > 0][:8]
     if not sectoral_winners:
         sectoral_winners = _fallback_sectoral_winners()
@@ -383,7 +465,7 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    gainers = get_top_gainers(20) or _fallback_gainers()
+    gainers = gainers_r or _fallback_gainers()
     widgets.append(
         build_nse_widget(
             "top_gainers",
@@ -394,7 +476,7 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    losers = get_top_losers(20) or _fallback_losers()
+    losers = losers_r or _fallback_losers()
     widgets.append(
         build_nse_widget(
             "top_losers",
@@ -405,7 +487,7 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    high52 = get_52_week_high(25) or _fallback_52_week_high()
+    high52 = high52_r or _fallback_52_week_high()
     widgets.append(
         build_nse_widget(
             "fifty_two_week_high",
@@ -416,7 +498,7 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    low52 = get_52_week_low(25) or _fallback_52_week_low()
+    low52 = low52_r or _fallback_52_week_low()
     widgets.append(
         build_nse_widget(
             "fifty_two_week_low",
@@ -427,8 +509,14 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    # Real Chartink-style formula screeners built from LIVE NSE data
-    nr7_rows = get_nr7_breakout_candidates(25) or _fallback_nr7_breakouts()
+    # NR7 / breakouts are derived from gainers + 52w-high above; fall back if those
+    # were unavailable (recompute cheaply from live rows when present).
+    nr7_rows = get_nr7_breakout_candidates(25) if gainers_r else []
+    if not nr7_rows:
+        nr7_rows = _fallback_nr7_breakouts()
+        if not any("NR7 breakout candidates" in w for w in warnings):
+            warnings.append("NSE NR7 breakout candidates unavailable; showing fallback data")
+            any_fallback = True
     widgets.append(
         ScreenerWidget(
             id="copy-morning-scanner-for-buy-nr7-based-breakout-8",
@@ -445,7 +533,12 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    pbo_rows = get_potential_breakouts(25) or _fallback_potential_breakouts()
+    pbo_rows = get_potential_breakouts(25) if high52_r else []
+    if not pbo_rows:
+        pbo_rows = _fallback_potential_breakouts()
+        if not any("potential breakouts" in w for w in warnings):
+            warnings.append("NSE potential breakouts unavailable; showing fallback data")
+            any_fallback = True
     widgets.append(
         ScreenerWidget(
             id="potential-breakouts",
@@ -461,7 +554,8 @@ def build_nse_dashboard() -> List[ScreenerWidget]:
         )
     )
 
-    return widgets
+    source = "synthetic_fallback" if any_fallback else "live"
+    return widgets, source, warnings
 
 
 # --- Synthetic fallbacks -----------------------------------------------------
