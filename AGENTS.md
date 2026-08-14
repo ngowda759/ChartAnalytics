@@ -108,3 +108,29 @@ from the `daily_stock_analysis` fork (MIT). Self-contained — no AI/DB deps.
 - Frontend: `frontend/app/(dashboard)/decision-signals/page.tsx` +
   `decisionSignalsApi` in `frontend/lib/api.ts` + sidebar nav entry.
 - Dep: `pyyaml>=6.0.1` added to `backend/requirements.txt`.
+
+## Agent Analysis (TradingAgents-style pipeline)
+
+A deterministic, offline port of the TradingAgents framework (Apache-2.0,
+github.com/TauricResearch/TradingAgents) — the multi-agent graph:
+analysts → bull/bear investment debate → Research Manager → Trader →
+aggressive/conservative/neutral risk debate → Portfolio Manager.
+
+- No LLM/DB deps: every agent is a deterministic function of the
+  screener-engine synthetic OHLC + `app.services.indicators`, so the
+  pipeline always returns a complete result and is CI-testable. An LLM
+  can be wired in later behind a key; the deterministic path stays the
+  default + fallback.
+- Schemas: `app/schemas/agent_analysis.py` — `PortfolioRating` (5-tier
+  Buy/Overweight/Hold/Underweight/Sell), `TraderAction` (3-tier
+  Buy/Hold/Sell), `AnalystReport`, `DebateResult`, `ResearchPlan`,
+  `TraderProposal`, `PortfolioDecision`, `AgentAnalysisResult`.
+- Service package: `app/services/trading_agents/`
+  (`rating.py`, `analysts.py`, `debate.py`, `pipeline.py`).
+- API: `app/api/agent_analysis.py` mounted at
+  `/api/v1/agent-analysis` (`GET /?limit=`, `GET /{symbol}`). Registered
+  in `app/main.py`.
+- Tests: `backend/tests/services/test_agent_analysis.py`.
+- Frontend: `frontend/app/(dashboard)/agent-analysis/page.tsx` (summary
+  cards + watchlist table + detail modal showing every pipeline stage) +
+  `agentAnalysisApi` in `frontend/lib/api.ts` + sidebar nav entry.
