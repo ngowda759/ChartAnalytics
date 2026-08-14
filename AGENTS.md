@@ -81,3 +81,30 @@ npm run build
   `extra.source = "synthetic_fallback"` so the UI can distinguish them from live.
 - Tests live in `backend/tests/services/test_nse_service.py`; monkeypatch the
   `get_*` getters to `[]` to simulate NSE being down.
+
+## Decision Signals / Strategy Templates (ported from daily_stock_analysis)
+
+A YAML-driven strategy-template engine + Decision Signals feature, adapted
+from the `daily_stock_analysis` fork (MIT). Self-contained — no AI/DB deps.
+
+- Strategy YAMLs: `backend/app/data/strategy_templates/*.yaml` (one per
+  strategy: ma_golden_cross, volume_breakout, bull_trend, rsi_oversold_reversal,
+  bollinger_squeeze_breakout, supertrend_flip). Add a new YAML to ship a new
+  strategy; no code changes needed.
+- Engine: `app/services/strategy_templates.py` loads YAMLs and evaluates each
+  strategy's weighted `rules` against the screener_engine's synthetic OHLC +
+  the existing `app.services.indicators` functions, producing a 0-100 score,
+  a buy/hold/avoid action, and entry/stop/target levels. Rule kinds are
+  registered in `_RULE_EVALUATORS`.
+- Signals: `app/services/decision_signals.py` wraps evals into
+  `DecisionSignal` objects (action, score, confidence, entry/stop/target,
+  risk:reward, horizon, status lifecycle) — never empty (synthetic fallback).
+- API: `app/api/decision_signals.py` mounted at `/api/v1/decision-signals`
+  (`GET /strategies`, `GET /signals?action=&strategy=&min_score=&limit=`,
+  `GET /signals/{id}`). Registered in `app/main.py`.
+- Schemas: `app/schemas/decision_signals.py`.
+- Tests: `backend/tests/services/test_strategy_templates.py` and
+  `test_decision_signals.py`.
+- Frontend: `frontend/app/(dashboard)/decision-signals/page.tsx` +
+  `decisionSignalsApi` in `frontend/lib/api.ts` + sidebar nav entry.
+- Dep: `pyyaml>=6.0.1` added to `backend/requirements.txt`.

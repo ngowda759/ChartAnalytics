@@ -1,0 +1,38 @@
+# RSI Oversold Reversal — adapted from daily_stock_analysis (MIT).
+# RSI below oversold threshold then turning up, signalling mean reversion.
+name: rsi_oversold_reversal
+display_name: RSI Oversold Reversal
+description: >-
+  Detects oversold reversals: RSI dipping below 30 then turning up, with
+  price stabilising. A mean-reversion entry.
+category: reversal
+aliases: [oversold, rsi_reversal]
+default_priority: 20
+market_regimes: [ranging, trending_down]
+
+rules:
+  # RSI(14) was below 30 within last 3 sessions and now above it
+  - kind: rsi_recover
+    period: 14
+    oversold: 30
+    within_sessions: 3
+    weight: 0.5
+  # today's close higher than previous close (turning up)
+  - kind: close_up
+    weight: 0.2
+  # volume not collapsing (>= 0.5x 5-day avg)
+  - kind: volume_above_avg
+    avg_period: 5
+    min_ratio: 0.5
+    weight: 0.3
+
+scoring:
+  base: 55
+  rsi_oversold_bonus: 10
+  close_up_bonus: 5
+  volume_stable_bonus: 5
+
+risk:
+  stop_loss_pct: 0.04
+  target_pct: 0.06
+  ideal_buy: near_recent_low

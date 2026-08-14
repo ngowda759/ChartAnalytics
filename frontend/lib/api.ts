@@ -236,6 +236,60 @@ export const strategiesApi = {
     }),
 };
 
+// Decision Signals API
+export type DecisionAction = 'buy' | 'hold' | 'avoid';
+
+export interface DecisionSignal {
+  id: string;
+  symbol: string;
+  name?: string | null;
+  strategy: string;
+  display_name: string;
+  category: string;
+  action: DecisionAction;
+  score: number;
+  confidence: number;
+  entry?: number | null;
+  stop_loss?: number | null;
+  target?: number | null;
+  horizon: string;
+  risk_reward?: number | null;
+  reasons: string[];
+  status: string;
+  timestamp: string;
+}
+
+export interface DecisionSignalListResponse {
+  total: number;
+  buy_count: number;
+  hold_count: number;
+  avoid_count: number;
+  signals: DecisionSignal[];
+}
+
+export const decisionSignalsApi = {
+  listSignals: (params?: {
+    action?: DecisionAction;
+    strategy?: string;
+    min_score?: number;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.action) qs.set('action', params.action);
+    if (params?.strategy) qs.set('strategy', params.strategy);
+    if (params?.min_score !== undefined)
+      qs.set('min_score', String(params.min_score));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    const query = qs.toString();
+    return fetchApi<DecisionSignalListResponse>(
+      `/decision-signals/signals${query ? `?${query}` : ''}`
+    );
+  },
+  getStrategies: () => fetchApi<string[]>('/decision-signals/strategies'),
+  getSignal: (signalId: string) =>
+    fetchApi<DecisionSignal>(`/decision-signals/signals/${encodeURIComponent(signalId)}`),
+};
+
 export default {
   market: marketApi,
   options: optionsApi,
@@ -246,4 +300,5 @@ export default {
   scanner: scannerApi,
   alerts: alertsApi,
   strategies: strategiesApi,
+  decisionSignals: decisionSignalsApi,
 };

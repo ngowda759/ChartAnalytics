@@ -17,6 +17,7 @@ import {
   ChevronRight,
   X,
   LayoutGrid,
+  Zap,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const navigation = [
   { name: 'Scanner', href: '/scanner', icon: Search },
   { name: 'Journal', href: '/journal', icon: BookOpen },
   { name: 'Strategies', href: '/strategies', icon: FlaskConical },
+  { name: 'Decision Signals', href: '/decision-signals', icon: Zap },
   { name: 'AI Assistant', href: '/ai-assistant', icon: Bot },
   { name: 'Risk', href: '/risk', icon: Shield },
   { name: 'Settings', href: '/settings', icon: Settings },
