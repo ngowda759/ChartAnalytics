@@ -2,9 +2,10 @@
 
 import asyncio
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 import structlog
+import pandas as pd
 
 from app.integrations.data_providers.mock_provider import MockDataProvider
 from app.integrations.data_providers.angel_one_provider import AngelOneProvider, create_angel_one_provider
@@ -138,11 +139,102 @@ class MarketDataService:
         interval: str = "1d",
         limit: int = 100,
     ) -> List[OHLCData]:
-        """Get OHLC data for a symbol."""
+        """Get OHLC data for a symbol.
+
+        Prefers live yfinance intraday candles so charts reflect the current
+        session; falls back to the configured provider (mock/Angel One/Kite)
+        when yfinance is unavailable (offline tests, blocked network) so the
+        endpoint is never empty.
+        """
+        live = await self._fetch_yfinance_ohlc(symbol, interval, limit)
+        if live:
+            return live
         try:
             return await self.provider.get_ohlc(symbol, interval, limit)
         except Exception as e:
             logger.error("fetch_ohlc_failed", symbol=symbol, error=str(e))
+            return []
+
+    # yfinance intraday support -------------------------------------------------
+
+    _YF_INDEX_MAP = {
+        "NIFTY": "^NSEI",
+        "NIFTY 50": "^NSEI",
+        "NIFTY50": "^NSEI",
+        "BANKNIFTY": "^NSEBANK",
+        "NIFTY BANK": "^NSEBANK",
+        "BANK NIFTY": "^NSEBANK",
+        "FINNIFTY": "^CNXFIN",
+        "NIFTY FIN SERVICE": "^CNXFIN",
+        "NIFTY FIN SERVICES": "^CNXFIN",
+        "NIFTY IT": "^CNXIT",
+        "NIFTY MIDCAP": "^CNXMIDCAP",
+    }
+    _YF_INTRADAY_INTERVALS = {"1m", "5m", "15m", "30m", "1h"}
+
+    def _yf_ticker(self, symbol: str) -> Optional[str]:
+        key = symbol.strip().upper()
+        if key in self._YF_INDEX_MAP:
+            return self._YF_INDEX_MAP[key]
+        # NSE equities: append .NS (yfinance convention). Skip obvious
+        # non-equity placeholders so we don't spam yfinance with junk.
+        if key and not key.startswith("^"):
+            return f"{key}.NS"
+        return None
+
+    def _yf_interval(self, interval: str) -> Optional[str]:
+        i = interval.lower()
+        return {"1h": "60m"}.get(i, i) if i in self._YF_INTRADAY_INTERVALS else None
+
+    async def _fetch_yfinance_ohlc(
+        self, symbol: str, interval: str, limit: int
+    ) -> List[OHLCData]:
+        """Fetch live intraday OHLC via yfinance. Returns [] on any failure."""
+        yf_interval = self._yf_interval(interval)
+        ticker = self._yf_ticker(symbol)
+        if not yf_interval or not ticker:
+            return []
+
+        def _download() -> List[OHLCData]:
+            import yfinance as yf  # local import: heavy, and optional at runtime
+
+            df = yf.download(
+                ticker,
+                period="1d",
+                interval=yf_interval,
+                progress=False,
+                auto_adjust=False,
+            )
+            if df is None or df.empty:
+                return []
+            # Normalise column names: yfinance may return MultiIndex columns
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            df = df.tail(limit).sort_index()
+            out: List[OHLCData] = []
+            for ts, row in df.iterrows():
+                try:
+                    ts_dt = ts.to_pydatetime()
+                    if ts_dt.tzinfo is not None:
+                        ts_dt = ts_dt.astimezone(timezone.utc).replace(tzinfo=None)
+                    out.append(
+                        OHLCData(
+                            timestamp=ts_dt,
+                            open=float(row["Open"]),
+                            high=float(row["High"]),
+                            low=float(row["Low"]),
+                            close=float(row["Close"]),
+                            volume=int(row.get("Volume") or 0),
+                        )
+                    )
+                except (TypeError, ValueError, KeyError):
+                    continue
+            return out
+
+        try:
+            return await asyncio.to_thread(_download)
+        except Exception as e:
+            logger.info("yfinance_ohlc_unavailable", symbol=symbol, error=str(e))
             return []
 
     async def get_option_chain(

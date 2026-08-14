@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { marketApi } from '@/lib/api';
 
 interface MarketChartProps {
   symbol: string;
@@ -20,34 +21,22 @@ interface VolumeData {
   color: string;
 }
 
-// Generate intraday timestamps for NSE market hours (9:15 AM - 3:30 PM IST)
-function getIntradayStartTime(): Date {
-  const now = new Date();
-  // Set to today's date with market open time (9:15 AM IST = 3:45 UTC)
-  const marketOpen = new Date(now);
-  marketOpen.setUTCHours(3, 45, 0, 0);
-  
-  // If market hasn't opened today yet, use today's date
-  // If after market hours, use today
-  // If during weekend, adjust appropriately
-  const day = now.getDay();
-  if (day === 0) { // Sunday
-    marketOpen.setDate(marketOpen.getDate() + 1);
-  } else if (day === 6) { // Saturday
-    marketOpen.setDate(marketOpen.getDate() + 2);
-  }
-  
-  return marketOpen;
-}
+// Backend /market/indices returns index rows under these symbols; map the
+// short labels used by the dashboard to the matching index row.
+const INDEX_SYMBOL_MAP: Record<string, string[]> = {
+  NIFTY: ['NIFTY 50', 'NIFTY50'],
+  BANKNIFTY: ['NIFTY BANK', 'BANK NIFTY'],
+  FINNIFTY: ['NIFTY FIN SERVICE', 'NIFTY FIN SERVICES'],
+};
 
-function isWithinMarketHours(date: Date): boolean {
-  // IST market hours: 9:15 AM to 3:30 PM
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const totalMinutes = hours * 60 + minutes;
-  
-  // 9:15 = 555, 15:30 = 930
-  return totalMinutes >= 555 && totalMinutes <= 930;
+function findIndexQuote(indices: any[], symbol: string) {
+  const aliases = INDEX_SYMBOL_MAP[symbol];
+  if (!aliases) return undefined;
+  return indices.find(
+    (i) =>
+      i &&
+      (aliases.includes(i.symbol) || aliases.includes(i.name?.toUpperCase())),
+  );
 }
 
 export function MarketChart({ symbol }: MarketChartProps) {
@@ -55,6 +44,7 @@ export function MarketChart({ symbol }: MarketChartProps) {
   const chartRef = useRef<any>(null);
   const [isClient, setIsClient] = useState(false);
   const [chartInfo, setChartInfo] = useState({ currentPrice: 0, change: 0, changePercent: 0 });
+  const [isLive, setIsLive] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -64,9 +54,12 @@ export function MarketChart({ symbol }: MarketChartProps) {
     if (!chartContainerRef.current || !isClient) return;
 
     let chart: any;
+    let cancelled = false;
 
     const initChart = async () => {
       const { createChart } = await import('lightweight-charts');
+
+      if (cancelled) return;
 
       chart = createChart(chartContainerRef.current!, {
         layout: {
@@ -106,15 +99,15 @@ export function MarketChart({ symbol }: MarketChartProps) {
         scaleMargins: { top: 0.8, bottom: 0 },
       });
 
-      const mockData = generateIntradayData(symbol);
-      candleSeries.setData(mockData.candles);
-      volumeSeries.setData(mockData.volume);
-      
-      setChartInfo({
-        currentPrice: mockData.currentPrice,
-        change: mockData.change,
-        changePercent: mockData.changePercent
-      });
+      const { candles, volume, currentPrice, change, changePercent, live } =
+        await loadChartData(symbol);
+      if (cancelled) return;
+
+      candleSeries.setData(candles);
+      volumeSeries.setData(volume);
+
+      setChartInfo({ currentPrice, change, changePercent });
+      setIsLive(live);
 
       chart.timeScale().fitContent();
 
@@ -132,6 +125,7 @@ export function MarketChart({ symbol }: MarketChartProps) {
     initChart().catch(console.error);
 
     return () => {
+      cancelled = true;
       if (chart) {
         chart.remove();
       }
@@ -153,7 +147,12 @@ export function MarketChart({ symbol }: MarketChartProps) {
         <span className={`font-medium ${chartInfo.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
           {chartInfo.change >= 0 ? '+' : ''}{chartInfo.change.toFixed(2)} ({chartInfo.changePercent >= 0 ? '+' : ''}{chartInfo.changePercent.toFixed(2)}%)
         </span>
-        <span className="text-xs text-muted-foreground ml-auto">5 min | 9:15 AM - 3:30 PM IST</span>
+        <span className="text-xs text-muted-foreground ml-auto">
+          5 min | 9:15 AM - 3:30 PM IST
+          <span className={`ml-2 ${isLive ? 'text-green-600' : 'text-amber-600'}`}>
+            {isLive ? '● Live' : '○ Demo'}
+          </span>
+        </span>
       </div>
       <div ref={chartContainerRef} className="w-full" />
       <div className="flex items-center justify-end gap-4 text-xs">
@@ -170,57 +169,143 @@ export function MarketChart({ symbol }: MarketChartProps) {
   );
 }
 
+// Fetch live OHLC from the backend (/market/ohlc) and a live index quote
+// (/market/indices) for the header. Falls back to synthetic intraday candles
+// when the backend is unreachable so the chart is never empty.
+async function loadChartData(symbol: string): Promise<{
+  candles: CandleData[];
+  volume: VolumeData[];
+  currentPrice: number;
+  change: number;
+  changePercent: number;
+  live: boolean;
+}> {
+  // Live index quote for the headline numbers (genuinely current via nsetools).
+  let liveQuote: any = undefined;
+  try {
+    const { data: indices } = await marketApi.getIndices();
+    if (indices) liveQuote = findIndexQuote(indices, symbol);
+  } catch {
+    // ignore — fall back to OHLC-derived header
+  }
+
+  // Live intraday candles from the backend (yfinance-backed).
+  let candles: CandleData[] = [];
+  let volume: VolumeData[] = [];
+  let live = false;
+  try {
+    const { data, error } = await marketApi.getOHLC(symbol, '5m');
+    if (!error && data && data.length > 0) {
+      const seen = new Set<number>();
+      for (const c of data) {
+        // Backend timestamps are naive UTC; append Z so JS parses as UTC.
+        const time = Math.floor(new Date(`${c.timestamp}Z`).getTime() / 1000);
+        if (Number.isNaN(time) || seen.has(time)) continue;
+        seen.add(time);
+        candles.push({ time, open: c.open, high: c.high, low: c.low, close: c.close });
+        volume.push({
+          time,
+          value: c.volume ?? 0,
+          color: c.close >= c.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+        });
+      }
+      live = candles.length > 0;
+    }
+  } catch {
+    // fall through to synthetic
+  }
+
+  if (!live) {
+    const mock = generateIntradayData(symbol);
+    candles = mock.candles;
+    volume = mock.volume;
+    return { ...mock, live: false };
+  }
+
+  const openPrice = candles[0].open;
+  const lastClose = candles[candles.length - 1].close;
+
+  if (liveQuote) {
+    return {
+      candles,
+      volume,
+      currentPrice: liveQuote.price ?? lastClose,
+      change: liveQuote.change ?? lastClose - openPrice,
+      changePercent: liveQuote.change_percent ?? ((lastClose - openPrice) / openPrice) * 100,
+      live: true,
+    };
+  }
+
+  const change = lastClose - openPrice;
+  return {
+    candles,
+    volume,
+    currentPrice: lastClose,
+    change,
+    changePercent: (change / openPrice) * 100,
+    live: true,
+  };
+}
+
+function getIntradayStartTime(): Date {
+  const now = new Date();
+  const marketOpen = new Date(now);
+  marketOpen.setUTCHours(3, 45, 0, 0);
+
+  const day = now.getDay();
+  if (day === 0) {
+    marketOpen.setDate(marketOpen.getDate() + 1);
+  } else if (day === 6) {
+    marketOpen.setDate(marketOpen.getDate() + 2);
+  }
+
+  return marketOpen;
+}
+
 function generateIntradayData(symbol: string) {
   const candles: CandleData[] = [];
   const volume: VolumeData[] = [];
-  
+
   const basePrice = symbol === 'NIFTY' ? 24500 : 52400;
   const volatility = symbol === 'NIFTY' ? 50 : 100;
-  
-  // Get start time for market open (9:15 AM IST)
+
   const marketOpen = getIntradayStartTime();
   let currentPrice = basePrice;
-  
-  // Generate 5-minute candles from market open
+
   const now = new Date();
   const marketClose = new Date(marketOpen);
-  marketClose.setHours(15, 30, 0, 0); // 3:30 PM IST
-  
-  // If current time is after market close, show full session
-  // Otherwise show candles up to current time
+  marketClose.setHours(15, 30, 0, 0);
+
   const endTime = now > marketClose ? marketClose : now;
-  
-  // Generate 75 candles (5 min candles from 9:15 to 3:30 = 75 candles)
+
   let candleTime = new Date(marketOpen);
-  
+
   while (candleTime <= endTime) {
     const timestamp = Math.floor(candleTime.getTime() / 1000);
-    
+
     const change = (Math.random() - 0.5) * volatility;
     const open = currentPrice;
     const close = currentPrice + change;
     const high = Math.max(open, close) + Math.random() * (volatility / 2);
     const low = Math.min(open, close) - Math.random() * (volatility / 2);
-    
+
     candles.push({ time: timestamp, open, high, low, close });
-    
+
     volume.push({
       time: timestamp,
       value: Math.random() * 1000000 + 500000,
       color: close >= open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
     });
-    
+
     currentPrice = close;
-    
-    // Move to next 5-minute candle
+
     candleTime = new Date(candleTime.getTime() + 5 * 60 * 1000);
   }
-  
-  // Calculate overall change from open
+
   const openPrice = candles.length > 0 ? candles[0].open : basePrice;
   const lastClose = candles.length > 0 ? candles[candles.length - 1].close : basePrice;
   const change = lastClose - openPrice;
   const changePercent = (change / openPrice) * 100;
-  
+
   return { candles, volume, currentPrice: lastClose, change, changePercent };
 }

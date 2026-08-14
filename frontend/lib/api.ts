@@ -82,7 +82,7 @@ export const marketApi = {
   getQuotes: () => fetchApi<any[]>('/market/quotes'),
   getIndices: () => fetchApi<any[]>('/market/indices'),
   getOHLC: (symbol: string, timeframe: string) =>
-    fetchApi<any[]>(`/market/ohlc/${symbol}?timeframe=${timeframe}`),
+    fetchApi<any[]>(`/market/ohlc/${symbol}?interval=${timeframe}`),
 };
 
 // Option Chain API
