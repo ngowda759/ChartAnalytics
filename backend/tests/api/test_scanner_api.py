@@ -10,6 +10,7 @@ from app.main import app
 
 
 def _force_nse_down(monkeypatch):
+    nse_service.clear_nse_cache()
     for fn_name in (
         "get_all_indices",
         "get_sectoral_indices",
@@ -25,6 +26,7 @@ def _force_nse_down(monkeypatch):
 
 
 def _force_nse_up(monkeypatch):
+    nse_service.clear_nse_cache()
     from app.schemas.scanner import ScreenerRow
 
     live = [ScreenerRow(symbol="LIVE", name="Live", ltp=1.0, change_percent=1.0)]

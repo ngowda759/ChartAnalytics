@@ -114,6 +114,11 @@ class ScreenerWidget(BaseModel):
     columns: List[str] = ["symbol", "change_percent", "ltp", "volume"]
     rows: List[ScreenerRow]
     last_updated: datetime
+    # Per-widget provenance so the UI can render live / cached / fallback /
+    # unavailable states truthfully instead of guessing from the rows.
+    status: str = "live"  # live | cached | fallback | unavailable | error
+    source: str = "nse"  # nse | broker | cache | synthetic | none
+    error: Optional[str] = None
 
 
 class ScreenerDashboard(BaseModel):
@@ -127,9 +132,12 @@ class ScreenerDashboard(BaseModel):
 class ScreenerDashboardResponse(BaseModel):
     """Envelope for the NSE scan dashboard.
 
-    ``source`` is "live" when every dataset came from NSE, "synthetic_fallback"
-    when any widget used fallback data. ``warnings`` lists unavailable datasets.
-    ``generated_at`` / ``data_timestamp`` let the UI show freshness + staleness.
+    ``source`` is "live" when every dataset came from NSE, "cached" when
+    cached real data was served because NSE was temporarily unavailable,
+    "synthetic_fallback" when any widget used labelled fallback data, and
+    "unavailable" when no data (live or cached) could be obtained for any
+    widget. ``warnings`` lists unavailable datasets. ``generated_at`` /
+    ``data_timestamp`` let the UI show freshness + staleness.
     """
 
     success: bool = True

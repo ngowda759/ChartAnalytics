@@ -108,24 +108,9 @@ class MarketDataService:
                 return data
             except Exception as e:
                 logger.error("fetch_quote_failed", symbol=symbol, error=str(e))
-                # Return cached data if available
-                return self._quote_cache.get(
-                    cache_key,
-                    TickerData(
-                        symbol=symbol,
-                        name=symbol,
-                        price=0,
-                        change=0,
-                        change_percent=0,
-                        open=0,
-                        high=0,
-                        low=0,
-                        close=0,
-                        previous_close=0,
-                        volume=0,
-                        timestamp=datetime.utcnow(),
-                    ),
-                )
+                # Return cached data if available; otherwise None so the caller
+                # can show "N/A" instead of a fabricated zero-price quote.
+                return self._quote_cache.get(cache_key, None)
 
     async def get_quotes(self, symbols: List[str]) -> List[TickerData]:
         """Get quotes for multiple symbols."""

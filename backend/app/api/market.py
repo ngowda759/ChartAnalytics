@@ -72,6 +72,33 @@ async def get_quote(symbol: str, force_refresh: bool = False):
     )
 
 
+@router.get("/quotes", response_model=List[MarketQuote])
+async def get_quotes(symbols: str = Query(..., description="Comma-separated symbols")):
+    """Get real-time quotes for multiple symbols."""
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    logger.info("fetching_quotes", symbols=symbol_list)
+
+    service = get_market_service()
+    quotes = await service.get_quotes(symbol_list)
+
+    return [
+        MarketQuote(
+            symbol=q.symbol,
+            name=q.name,
+            price=q.price,
+            change=q.change,
+            change_percent=q.change_percent,
+            open=q.open,
+            high=q.high,
+            low=q.low,
+            previous_close=q.previous_close,
+            volume=q.volume,
+            timestamp=q.timestamp,
+        )
+        for q in quotes
+    ]
+
+
 def _safe_float(value, default=None):
     try:
         if value in (None, "", "-", "NA"):

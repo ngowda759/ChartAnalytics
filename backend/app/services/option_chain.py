@@ -21,6 +21,8 @@ class StrikeAnalysis:
     put_volume: int
     call_iv: float
     put_iv: float
+    call_ltp: float
+    put_ltp: float
     oi_balance: int  # Put OI - Call OI
     net_building: str  # "short_covering", "long_unwinding", "fresh_shorting", "fresh_buildup", "neutral"
     interpretation: str
@@ -144,6 +146,8 @@ class OptionChainAnalyzer:
                     put_volume=data.put_volume,
                     call_iv=data.call_iv,
                     put_iv=data.put_iv,
+                    call_ltp=data.call_ltp,
+                    put_ltp=data.put_ltp,
                     oi_balance=oi_balance,
                     net_building=net_building,
                     interpretation=interpretation,
