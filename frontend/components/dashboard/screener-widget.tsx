@@ -147,6 +147,26 @@ export function ScreenerWidget({ widget, showChartPreview }: Props) {
     timeZone: 'Asia/Kolkata',
   });
 
+  // Per-widget provenance from the runtime repair. Maps the backend status/source
+  // to a labelled badge so a cached/fallback/unavailable tile is never silent.
+  const statusBadge = (() => {
+    const s = widget.status;
+    if (!s || s === 'live') return null;
+    const map: Record<string, { label: string; className: string }> = {
+      cached: { label: 'Cached', className: 'border-amber-500/40 text-amber-600' },
+      fallback: { label: 'Fallback', className: 'border-yellow-500/40 text-yellow-600' },
+      unavailable: { label: 'Unavailable', className: 'border-red-500/40 text-red-600' },
+      error: { label: 'Error', className: 'border-red-500/40 text-red-600' },
+    };
+    const entry = map[s];
+    if (!entry) return null;
+    return (
+      <Badge variant="outline" className={`text-xs font-normal ${entry.className}`}>
+        {entry.label}
+      </Badge>
+    );
+  })();
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="pb-2">
@@ -157,6 +177,7 @@ export function ScreenerWidget({ widget, showChartPreview }: Props) {
               <Badge variant="outline" className="text-xs font-normal">
                 {widget.timeframe}
               </Badge>
+              {statusBadge}
             </CardTitle>
             {widget.description && (
               <p className="text-xs text-muted-foreground mt-1">{widget.description}</p>

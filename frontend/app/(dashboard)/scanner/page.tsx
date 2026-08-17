@@ -1,106 +1,59 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, TrendingUp, TrendingDown, Zap, Activity } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { scannerApi } from '@/lib/api';
 
 interface ScanResult {
   id: string;
   symbol: string;
-  name: string;
-  scan_type: 'breakout' | 'ema_cross' | 'volume_spike' | 'rsi_extreme' | 'ma_cross';
+  name?: string | null;
+  scan_type: string;
   direction: 'bullish' | 'bearish' | 'neutral';
   confidence: number;
   price: number;
   change_percent: number;
-  volume_ratio: number;
-  signal_strength: number;
+  volume_ratio?: number | null;
   timestamp: string;
 }
 
-const STOCKS = [
-  { symbol: 'RELIANCE', name: 'Reliance Industries', basePrice: 2980 },
-  { symbol: 'HDFCBANK', name: 'HDFC Bank', basePrice: 1695 },
-  { symbol: 'ICICIBANK', name: 'ICICI Bank', basePrice: 1120 },
-  { symbol: 'TCS', name: 'Tata Consultancy', basePrice: 4150 },
-  { symbol: 'INFY', name: 'Infosys', basePrice: 1850 },
-  { symbol: 'ITC', name: 'ITC Limited', basePrice: 485 },
-  { symbol: 'LT', name: 'Larsen & Toubro', basePrice: 3650 },
-  { symbol: 'SBIN', name: 'State Bank of India', basePrice: 820 },
-  { symbol: 'BHARTIARTL', name: 'Bharti Airtel', basePrice: 1580 },
-  { symbol: 'ADANIPORTS', name: 'Adani Ports', basePrice: 1420 },
-  { symbol: 'TATASTEEL', name: 'Tata Steel', basePrice: 185 },
-  { symbol: 'NESTLEIND', name: 'Nestle India', basePrice: 2450 },
-  { symbol: 'MARUTI', name: 'Maruti Suzuki', basePrice: 12800 },
-  { symbol: 'BAJFINANCE', name: 'Bajaj Finance', basePrice: 7850 },
-  { symbol: 'KOTAKBANK', name: 'Kotak Bank', basePrice: 1780 },
-];
-
-const SCAN_TYPES = [
-  { value: 'breakout', label: 'Breakout', icon: Zap },
-  { value: 'ema_cross', label: 'EMA Cross', icon: TrendingUp },
-  { value: 'volume_spike', label: 'Volume Spike', icon: Activity },
-  { value: 'rsi_extreme', label: 'RSI Extreme', icon: Activity },
-  { value: 'ma_cross', label: 'MA Cross', icon: TrendingUp },
-];
-
-function generateScanResults(): ScanResult[] {
-  const results: ScanResult[] = [];
-  const selectedStocks = STOCKS.sort(() => Math.random() - 0.5).slice(0, 8);
-  
-  selectedStocks.forEach((stock, i) => {
-    const scanTypes: ScanResult['scan_type'][] = ['breakout', 'ema_cross', 'volume_spike', 'rsi_extreme', 'ma_cross'];
-    const directions: ScanResult['direction'][] = ['bullish', 'bearish', 'neutral'];
-    const directions_weights = [0.5, 0.3, 0.2]; // 50% bullish, 30% bearish, 20% neutral
-    
-    const rand = Math.random();
-    let direction: ScanResult['direction'] = 'neutral';
-    if (rand < directions_weights[0]) direction = 'bullish';
-    else if (rand < directions_weights[0] + directions_weights[1]) direction = 'bearish';
-    
-    const scanType = scanTypes[Math.floor(Math.random() * scanTypes.length)];
-    const priceVariation = (Math.random() - 0.5) * 0.05;
-    const price = stock.basePrice * (1 + priceVariation);
-    
-    results.push({
-      id: `scan-${i}`,
-      symbol: stock.symbol,
-      name: stock.name,
-      scan_type: scanType,
-      direction,
-      confidence: Math.floor(Math.random() * 30) + 65,
-      price,
-      change_percent: (Math.random() - 0.4) * 8,
-      volume_ratio: Math.random() * 2 + 1.2,
-      signal_strength: Math.floor(Math.random() * 40) + 60,
-      timestamp: new Date().toISOString(),
-    });
-  });
-  
-  return results.sort((a, b) => b.confidence - a.confidence);
-}
+const SCAN_TYPE_LABELS: Record<string, string> = {
+  breakout: 'Breakout',
+  ema_cross: 'EMA Cross',
+  volume_spike: 'Volume Spike',
+  rsi_extreme: 'RSI Extreme',
+  ma_cross: 'MA Cross',
+  oi_buildup: 'OI Buildup',
+};
 
 export default function ScannerPage() {
   const [results, setResults] = useState<ScanResult[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('all');
   const [scanType, setScanType] = useState<string>('all');
   const [lastScan, setLastScan] = useState<Date | null>(null);
 
-  const runScan = () => {
+  const runScan = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => {
-      setResults(generateScanResults());
+    setError(null);
+    const res = await scannerApi.getScanResults();
+    if (res.error || !res.data) {
+      setError(res.error ?? 'Scanner data unavailable');
+      setResults([]);
+    } else {
+      setResults(res.data as ScanResult[]);
       setLastScan(new Date());
-      setLoading(false);
-    }, 800);
-  };
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     runScan();
-  }, []);
+  }, [runScan]);
 
   const filteredResults = results.filter((r) => {
     if (filter !== 'all' && r.direction !== filter) return false;
@@ -123,13 +76,10 @@ export default function ScannerPage() {
     }
   };
 
-  const getScanTypeLabel = (type: ScanResult['scan_type']) => {
-    return SCAN_TYPES.find(t => t.value === type)?.label || type;
-  };
+  const getScanTypeLabel = (type: string) => SCAN_TYPE_LABELS[type] || type;
 
-  const formatINR = (num: number) => {
-    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
-  };
+  const formatINR = (num: number) =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 
   return (
     <div className="space-y-6">
@@ -195,8 +145,8 @@ export default function ScannerPage() {
           className="px-4 py-2 border rounded-lg bg-background"
         >
           <option value="all">All Types</option>
-          {SCAN_TYPES.map((type) => (
-            <option key={type.value} value={type.value}>{type.label}</option>
+          {Object.entries(SCAN_TYPE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
           ))}
         </select>
       </div>
@@ -210,6 +160,12 @@ export default function ScannerPage() {
             <div className="flex justify-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-muted-foreground">{error}</p>
+              <Button variant="outline" onClick={runScan}>Retry</Button>
+            </div>
           ) : filteredResults.length === 0 ? (
             <p className="text-center py-8 text-muted-foreground">No signals match your filters</p>
           ) : (
@@ -222,7 +178,7 @@ export default function ScannerPage() {
                   <div className="flex items-center gap-4">
                     <div className="flex flex-col">
                       <span className="font-semibold">{r.symbol}</span>
-                      <span className="text-xs text-muted-foreground">{r.name}</span>
+                      <span className="text-xs text-muted-foreground">{r.name ?? '—'}</span>
                     </div>
                     <Badge variant="outline">{getScanTypeLabel(r.scan_type)}</Badge>
                   </div>
@@ -235,7 +191,7 @@ export default function ScannerPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Vol Ratio</p>
-                      <p className="font-semibold">{r.volume_ratio.toFixed(1)}x</p>
+                      <p className="font-semibold">{r.volume_ratio != null ? `${r.volume_ratio.toFixed(1)}x` : 'N/A'}</p>
                     </div>
                     <div className="text-right w-20">
                       <p className="text-xs text-muted-foreground">Confidence</p>

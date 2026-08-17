@@ -34,8 +34,8 @@ export function RecentAlerts() {
     {
       refetchIntervalMs: 60 * 1000,
       select: (rows) => ({
+        // Slice only; let useTileQuery derive source/stale from the real response.
         data: (rows ?? []).slice(0, 6),
-        source: 'live',
       }),
     }
   );
