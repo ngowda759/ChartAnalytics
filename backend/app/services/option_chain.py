@@ -42,7 +42,7 @@ class OptionChainAnalysis:
     total_put_oi: int
     net_oi: int  # Put OI - Call OI
     atm_strike: float
-    atm_iv: float
+    atm_iv: Optional[float]
     iv_skew: float  # Put IV / Call IV
     trend: str  # "bullish", "bearish", "neutral"
     confidence: float  # 0-100
@@ -50,6 +50,9 @@ class OptionChainAnalysis:
     support_levels: List[Dict[str, Any]]
     resistance_levels: List[Dict[str, Any]]
     interpretation: str
+    source: str = "unavailable"
+    status: str = "unavailable"
+    timestamp: Optional[datetime] = None
 
 
 class OptionChainAnalyzer:
@@ -61,6 +64,11 @@ class OptionChainAnalyzer:
 
     def analyze(self, chain_data: List[OptionChainData]) -> OptionChainAnalysis:
         """Perform complete option chain analysis."""
+        # Propagate the real provider source/status/timestamp so callers can
+        # trace OI back to Angel One/Kite (or truthful "unavailable").
+        src = getattr(chain_data[0], "source", "unavailable") if chain_data else "unavailable"
+        status = getattr(chain_data[0], "status", "unavailable") if chain_data else "unavailable"
+        chain_ts = getattr(chain_data[0], "timestamp", None) if chain_data else None
 
         # Group by strike
         strikes = self._process_chain_data(chain_data)
@@ -69,8 +77,8 @@ class OptionChainAnalyzer:
         max_pain = self._find_max_pain(strikes)
         pcr = self._calculate_pcr(strikes)
         pcr_change = self._calculate_pcr_change(strikes)
-        total_call_oi = sum(s.call_oi for s in strikes)
-        total_put_oi = sum(s.put_oi for s in strikes)
+        total_call_oi = sum(s.call_oi or 0 for s in strikes)
+        total_put_oi = sum(s.put_oi or 0 for s in strikes)
         net_oi = total_put_oi - total_call_oi
 
         # ATM and IV
@@ -109,6 +117,9 @@ class OptionChainAnalyzer:
             support_levels=support_levels,
             resistance_levels=resistance_levels,
             interpretation=interpretation,
+            source=src,
+            status=status,
+            timestamp=chain_ts,
         )
 
     def _process_chain_data(
@@ -118,30 +129,33 @@ class OptionChainAnalyzer:
         strikes = []
 
         for data in chain_data:
+            call_oi = data.call_oi or 0
+            put_oi = data.put_oi or 0
+            call_change_oi = data.call_change_oi or 0
+            put_change_oi = data.put_change_oi or 0
+
             # OI Balance
-            oi_balance = data.put_oi - data.call_oi
+            oi_balance = put_oi - call_oi
 
             # Net building analysis
-            net_building = self._determine_net_building(
-                data.call_change_oi, data.put_change_oi
-            )
+            net_building = self._determine_net_building(call_change_oi, put_change_oi)
 
             # Interpretation for this strike
             interpretation = self._interpret_strike(
                 data.strike,
-                data.call_oi,
-                data.put_oi,
-                data.call_change_oi,
-                data.put_change_oi,
+                call_oi,
+                put_oi,
+                call_change_oi,
+                put_change_oi,
             )
 
             strikes.append(
                 StrikeAnalysis(
                     strike=data.strike,
-                    call_oi=data.call_oi,
-                    put_oi=data.put_oi,
-                    call_change_oi=data.call_change_oi,
-                    put_change_oi=data.put_change_oi,
+                    call_oi=call_oi,
+                    put_oi=put_oi,
+                    call_change_oi=call_change_oi,
+                    put_change_oi=put_change_oi,
                     call_volume=data.call_volume,
                     put_volume=data.put_volume,
                     call_iv=data.call_iv,
@@ -157,14 +171,16 @@ class OptionChainAnalyzer:
         return strikes
 
     def _determine_net_building(self, call_change_oi: int, put_change_oi: int) -> str:
-        """Determine type of OI building at a strike."""
-        if call_change_oi > 0 and put_change_oi < 0:
+        """Determine type of OI building at a strike (real OI change only)."""
+        cc = call_change_oi or 0
+        pc = put_change_oi or 0
+        if cc > 0 and pc < 0:
             return "short_covering"
-        elif put_change_oi > 0 and call_change_oi < 0:
+        elif pc > 0 and cc < 0:
             return "long_unwinding"
-        elif call_change_oi > 0 and put_change_oi > 0:
+        elif cc > 0 and pc > 0:
             return "fresh_buildup"
-        elif call_change_oi < 0 and put_change_oi < 0:
+        elif cc < 0 and pc < 0:
             return "fresh_shorting"
         else:
             return "neutral"
@@ -218,9 +234,14 @@ class OptionChainAnalyzer:
         return min(pain, key=pain.get) if pain else self.spot_price
 
     def _calculate_pcr(self, strikes: List[StrikeAnalysis]) -> float:
-        """Calculate Put-Call Ratio."""
-        total_put_oi = sum(s.put_oi for s in strikes)
-        total_call_oi = sum(s.call_oi for s in strikes)
+        """Calculate Put-Call Ratio (total put OI / total call OI).
+
+        Real OI only. None OI (provider didn't report it) is treated as 0 —
+        never fabricated. Returns 0.0 when call OI is 0 to avoid division by
+        zero.
+        """
+        total_put_oi = sum(s.put_oi or 0 for s in strikes)
+        total_call_oi = sum(s.call_oi or 0 for s in strikes)
 
         if total_call_oi == 0:
             return 0.0
@@ -229,8 +250,8 @@ class OptionChainAnalyzer:
 
     def _calculate_pcr_change(self, strikes: List[StrikeAnalysis]) -> float:
         """Calculate change in PCR from previous session."""
-        total_put_change = sum(s.put_change_oi for s in strikes)
-        total_call_change = sum(s.call_change_oi for s in strikes)
+        total_put_change = sum(s.put_change_oi or 0 for s in strikes)
+        total_call_change = sum(s.call_change_oi or 0 for s in strikes)
 
         if total_call_change == 0:
             return 0.0
@@ -244,15 +265,22 @@ class OptionChainAnalyzer:
 
         return min(strikes, key=lambda s: abs(s.strike - self.spot_price)).strike
 
-    def _get_atm_iv(self, strikes: List[StrikeAnalysis]) -> float:
-        """Get ATM implied volatility."""
+    def _get_atm_iv(self, strikes: List[StrikeAnalysis]) -> Optional[float]:
+        """Get ATM implied volatility (None when not reported by provider)."""
         atm_strike = self._find_atm_strike(strikes)
 
         for s in strikes:
             if s.strike == atm_strike:
-                return (s.call_iv + s.put_iv) / 2
+                civ, piv = s.call_iv, s.put_iv
+                if civ is None and piv is None:
+                    return None
+                if civ is None:
+                    return piv
+                if piv is None:
+                    return civ
+                return (civ + piv) / 2
 
-        return 0.0
+        return None
 
     def _calculate_iv_skew(self, strikes: List[StrikeAnalysis]) -> float:
         """Calculate IV skew (put IV / call IV)."""
@@ -260,9 +288,10 @@ class OptionChainAnalyzer:
 
         for s in strikes:
             if s.strike == atm_strike:
-                if s.call_iv == 0:
+                civ, piv = s.call_iv or 0, s.put_iv or 0
+                if civ == 0:
                     return 0.0
-                return round(s.put_iv / s.call_iv, 2)
+                return round(piv / civ, 2)
 
         return 1.0
 

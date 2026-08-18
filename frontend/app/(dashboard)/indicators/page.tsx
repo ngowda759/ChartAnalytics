@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, TrendingUp, TrendingDown, Activity, BarChart3 } from 'lucide-react';
+import { indicatorsApi } from '@/lib/api';
 
 interface IndicatorValue {
   id: string;
@@ -17,138 +18,105 @@ interface IndicatorValue {
 }
 
 const SYMBOLS = [
-  { value: 'NIFTY', label: 'NIFTY 50', basePrice: 24500 },
-  { value: 'BANKNIFTY', label: 'BANKNIFTY', basePrice: 52400 },
-  { value: 'FINNIFTY', label: 'FINNIFTY', basePrice: 23400 },
+  { value: 'NIFTY', label: 'NIFTY 50' },
+  { value: 'BANKNIFTY', label: 'BANKNIFTY' },
+  { value: 'FINNIFTY', label: 'FINNIFTY' },
 ];
 
-function calculateIndicators(spotPrice: number): IndicatorValue[] {
-  const volatility = 0.02;
-  
-  // Simulate calculated indicator values
-  const rsi = 45 + Math.random() * 30; // 45-75 range
-  const macd = (Math.random() - 0.4) * 100;
-  const macdSignal = (Math.random() - 0.4) * 80;
-  const macdHistogram = macd - macdSignal;
-  
-  const ema20 = spotPrice * (1 + (Math.random() - 0.5) * 0.02);
-  const ema50 = spotPrice * (1 + (Math.random() - 0.5) * 0.03);
-  const sma20 = spotPrice * (1 + (Math.random() - 0.5) * 0.02);
-  
-  const bbUpper = spotPrice * 1.03;
-  const bbMiddle = spotPrice;
-  const bbLower = spotPrice * 0.97;
-  
-  const atr = spotPrice * volatility * 0.1;
-  const adx = 20 + Math.random() * 40;
-  
-  const stochasticK = Math.random() * 100;
-  const stochasticD = Math.random() * 100;
-  
-  const vwap = spotPrice * (1 + (Math.random() - 0.5) * 0.005);
-  const obv = Math.random() > 0.5 ? 1 : -1;
-  
-  const supertrend = Math.random() > 0.5 ? spotPrice * 0.995 : spotPrice * 1.005;
-  const stDirection = supertrend < spotPrice ? 'bullish' : 'bearish';
-  
+function mapIndicators(data: any, spotPrice: number): IndicatorValue[] {
+  if (!data) return [];
+  const ema = data.ema || {};
+  const rsi = data.rsi || {};
+  const macd = data.macd || {};
+  const vwap = data.vwap || {};
+  const supertrend = data.supertrend || {};
+  const bb = data.bollinger_bands || {};
+  const atr = data.atr || {};
+  const adx = data.adx || {};
+
+  const rsiSignal =
+    rsi.signal === 'overbought'
+      ? 'bearish'
+      : rsi.signal === 'oversold'
+        ? 'bullish'
+        : 'neutral';
+  const macdSignal =
+    macd.histogram > 0 ? 'bullish' : macd.histogram < 0 ? 'bearish' : 'neutral';
+  const emaTrend =
+    ema.trend === 'bullish' ? 'bullish' : ema.trend === 'bearish' ? 'bearish' : 'neutral';
+  const stSignal = supertrend.direction === 'up' ? 'bullish' : 'bearish';
+
   return [
     {
       id: 'rsi',
       name: 'Relative Strength Index',
       shortName: 'RSI',
-      value: rsi,
-      signal: rsi > 70 ? 'bearish' : rsi < 30 ? 'bullish' : 'neutral',
-      description: 'Overbought (>70) / Oversold (<30)',
+      value: rsi.value ?? 0,
+      signal: rsiSignal,
+      description: rsi.signal ? `Signal: ${rsi.signal}` : '',
       unit: '',
     },
     {
       id: 'macd',
       name: 'MACD',
       shortName: 'MACD',
-      value: macd,
-      signal: macdHistogram > 0 ? 'bullish' : 'bearish',
-      description: `${macd > macdSignal ? 'MACD above Signal' : 'MACD below Signal'} | Histogram: ${macdHistogram.toFixed(2)}`,
+      value: macd.macd ?? 0,
+      signal: macdSignal,
+      description: `Histogram: ${(macd.histogram ?? 0).toFixed(2)} | Crossover: ${macd.crossover ?? 'none'}`,
       unit: '',
     },
     {
-      id: 'ema20',
-      name: 'EMA 20',
-      shortName: 'EMA 20',
-      value: ema20,
-      signal: ema20 > spotPrice ? 'bullish' : 'bearish',
-      description: `EMA: ₹${ema20.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      id: 'ema',
+      name: 'Exponential Moving Avg',
+      shortName: 'EMA',
+      value: ema.ema_20 ?? 0,
+      signal: emaTrend,
+      description: `EMA20: ${(ema.ema_20 ?? 0).toFixed(2)} | EMA50: ${(ema.ema_50 ?? 0).toFixed(2)}`,
       unit: '',
     },
     {
-      id: 'ema50',
-      name: 'EMA 50',
-      shortName: 'EMA 50',
-      value: ema50,
-      signal: ema50 > spotPrice ? 'bullish' : 'bearish',
-      description: `EMA: ₹${ema50.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
-      unit: '',
-    },
-    {
-      id: 'sma20',
-      name: 'SMA 20',
-      shortName: 'SMA 20',
-      value: sma20,
-      signal: sma20 > spotPrice ? 'bullish' : 'bearish',
-      description: `SMA: ₹${sma20.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
-      unit: '',
-    },
-    {
-      id: 'bb',
+      id: 'bollinger',
       name: 'Bollinger Bands',
       shortName: 'BB',
-      value: ((spotPrice - bbLower) / (bbUpper - bbLower)) * 100,
-      signal: spotPrice > bbUpper ? 'bearish' : spotPrice < bbLower ? 'bullish' : 'neutral',
-      description: `Upper: ₹${bbUpper.toFixed(2)} | Middle: ₹${bbMiddle.toFixed(2)} | Lower: ₹${bbLower.toFixed(2)}`,
-      unit: '%',
+      value: bb.middle ?? spotPrice,
+      signal: (bb.position ?? 50) > 80 ? 'bearish' : (bb.position ?? 50) < 20 ? 'bullish' : 'neutral',
+      description: `Upper: ${(bb.upper ?? 0).toFixed(2)} | Lower: ${(bb.lower ?? 0).toFixed(2)}`,
+      unit: '',
     },
     {
       id: 'atr',
       name: 'Average True Range',
       shortName: 'ATR',
-      value: atr,
-      signal: atr > spotPrice * 0.02 ? 'bearish' : 'neutral',
-      description: 'High volatility indicator',
-      unit: '₹',
-    },
-    {
-      id: 'adx',
-      name: 'Average Directional Index',
-      shortName: 'ADX',
-      value: adx,
-      signal: adx > 25 ? 'bullish' : 'neutral',
-      description: `${adx > 25 ? 'Strong trend' : 'Weak trend'}`,
+      value: atr.value ?? 0,
+      signal: 'neutral',
+      description: `Volatility: ${atr.signal ?? 'medium'} | ${(atr.percent ?? 0).toFixed(2)}%`,
       unit: '',
     },
     {
-      id: 'stochastic',
-      name: 'Stochastic',
-      shortName: 'STOCH',
-      value: stochasticK,
-      signal: stochasticK > 80 ? 'bearish' : stochasticK < 20 ? 'bullish' : 'neutral',
-      description: `K: ${stochasticK.toFixed(1)} | D: ${stochasticD.toFixed(1)}`,
+      id: 'adx',
+      name: 'ADX (Trend Strength)',
+      shortName: 'ADX',
+      value: adx.value ?? 0,
+      signal: (adx.plus_di ?? 0) > (adx.minus_di ?? 0) ? 'bullish' : 'bearish',
+      description: `Strength: ${adx.trend_strength ?? 'weak'}`,
       unit: '',
     },
     {
       id: 'vwap',
       name: 'VWAP',
       shortName: 'VWAP',
-      value: vwap,
-      signal: vwap > spotPrice ? 'bullish' : 'bearish',
-      description: `VWAP: ₹${vwap.toFixed(2)} | Price: ₹${spotPrice.toFixed(2)}`,
+      value: vwap.value ?? 0,
+      signal: (vwap.value ?? 0) > spotPrice ? 'bullish' : 'bearish',
+      description: vwap.signal ? `${vwap.signal} VWAP` : '',
       unit: '',
     },
     {
       id: 'supertrend',
       name: 'Supertrend',
       shortName: 'ST',
-      value: supertrend,
-      signal: stDirection,
-      description: `${stDirection === 'bullish' ? 'Above price' : 'Below price'} | Level: ₹${supertrend.toFixed(2)}`,
+      value: supertrend.value ?? 0,
+      signal: stSignal,
+      description: `Direction: ${supertrend.direction ?? '—'} | Breakout: ${supertrend.is_breakout ? 'Yes' : 'No'}`,
       unit: '',
     },
   ];
@@ -158,31 +126,36 @@ export default function IndicatorsPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
   const [indicators, setIndicators] = useState<IndicatorValue[]>([]);
   const [loading, setLoading] = useState(true);
-  const [spotPrice, setSpotPrice] = useState(24500);
+  const [error, setError] = useState<string | null>(null);
+  const [spotPrice, setSpotPrice] = useState<number | null>(null);
+
+  const loadIndicators = useCallback(async (symbol: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await indicatorsApi.getIndicators(symbol);
+      const payload = result?.data ?? null;
+      const price = payload?.price ?? null;
+      setSpotPrice(price);
+      setIndicators(mapIndicators(payload, price ?? 0));
+    } catch (e: any) {
+      setError(
+        e?.message?.includes('404')
+          ? 'Insufficient historical data to compute indicators for this symbol.'
+          : 'Indicators unavailable. Live market data could not be loaded.'
+      );
+      setIndicators([]);
+      setSpotPrice(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
-    if (symbolConfig) {
-      setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
-      setLoading(true);
-      setTimeout(() => {
-        setIndicators(calculateIndicators(symbolConfig.basePrice));
-        setLoading(false);
-      }, 500);
-    }
-  }, [selectedSymbol]);
+    loadIndicators(selectedSymbol);
+  }, [selectedSymbol, loadIndicators]);
 
-  const refreshData = () => {
-    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
-    if (symbolConfig) {
-      setLoading(true);
-      setTimeout(() => {
-        setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
-        setIndicators(calculateIndicators(symbolConfig.basePrice));
-        setLoading(false);
-      }, 500);
-    }
-  };
+  const refreshData = () => loadIndicators(selectedSymbol);
 
   const getSignalColor = (signal: string) => {
     switch (signal) {
@@ -236,7 +209,11 @@ export default function IndicatorsPage() {
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Spot Price</p>
-            <p className="text-2xl font-bold">₹{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-2xl font-bold">
+              {spotPrice != null
+                ? `₹${spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : 'N/A'}
+            </p>
           </CardContent>
         </Card>
         <Card className="bg-green-500/5">
@@ -276,6 +253,12 @@ export default function IndicatorsPage() {
               </CardContent>
             </Card>
           ))
+        ) : error ? (
+          <Card className="col-span-full">
+            <CardContent className="p-6 text-center text-muted-foreground">
+              {error}
+            </CardContent>
+          </Card>
         ) : (
           indicators.map((ind) => (
             <Card key={ind.id} className={`border-l-4 ${getSignalColor(ind.signal)}`}>
@@ -317,9 +300,9 @@ export default function IndicatorsPage() {
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <div className="flex h-4 rounded-full overflow-hidden bg-muted">
-                <div className="bg-green-500" style={{ width: `${(bullishCount / indicators.length) * 100}%` }} />
-                <div className="bg-gray-400" style={{ width: `${(neutralCount / indicators.length) * 100}%` }} />
-                <div className="bg-red-500" style={{ width: `${(bearishCount / indicators.length) * 100}%` }} />
+                <div className="bg-green-500" style={{ width: `${indicators.length ? (bullishCount / indicators.length) * 100 : 0}%` }} />
+                <div className="bg-gray-400" style={{ width: `${indicators.length ? (neutralCount / indicators.length) * 100 : 0}%` }} />
+                <div className="bg-red-500" style={{ width: `${indicators.length ? (bearishCount / indicators.length) * 100 : 0}%` }} />
               </div>
               <div className="flex justify-between mt-2 text-xs text-muted-foreground">
                 <span>Bullish: {bullishCount}</span>
@@ -333,8 +316,10 @@ export default function IndicatorsPage() {
                 bullishCount > bearishCount ? 'text-green-600' : 
                 bearishCount > bullishCount ? 'text-red-600' : 'text-gray-600'
               }`}>
-                {bullishCount > bearishCount ? 'BULLISH' : 
-                 bearishCount > bullishCount ? 'BEARISH' : 'NEUTRAL'}
+                {!indicators.length
+                  ? 'N/A'
+                  : bullishCount > bearishCount ? 'BULLISH' : 
+                   bearishCount > bullishCount ? 'BEARISH' : 'NEUTRAL'}
               </p>
             </div>
           </div>

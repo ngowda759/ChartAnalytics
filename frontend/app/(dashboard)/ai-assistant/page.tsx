@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { aiApi } from '@/lib/api';
 
 interface Message {
   id: string;
@@ -35,23 +36,29 @@ export default function AIAssistantPage() {
     setInput('');
     setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const responses = [
-        'Based on the current market conditions, I recommend reviewing your risk management parameters before entering any new positions.',
-        'The NIFTY 50 is showing strong momentum. Consider using a trailing stop-loss to protect profits.',
-        'Your recent trade journal shows a 65% win rate on momentum trades. This strategy seems to be working well for you.',
-        'Based on the RSI indicator, some large-cap stocks are approaching overbought territory. Consider taking profits or tightening stops.',
-      ];
+    try {
+      const result = await aiApi.chat({ role: 'user', content: userMessage.content });
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: responses[Math.floor(Math.random() * responses.length)],
+        content:
+          result?.data?.message?.content ??
+          result?.data?.response ??
+          'Unable to generate an insight right now. Live market data may be unavailable.',
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
+    } catch {
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Unable to reach the AI service. Please try again shortly.',
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, aiMessage]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const quickActions = [

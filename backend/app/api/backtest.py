@@ -3,7 +3,6 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import List, Optional
 from datetime import datetime, timedelta
 import structlog
-import random
 
 from app.services.backtesting import (
     backtesting_engine,
@@ -72,32 +71,45 @@ class BacktestResponse(BaseModel):
     errors: List[str]
 
 
-def generate_sample_data(num_bars: int = 100, base_price: float = 25000) -> List[OHLCV]:
-    """Generate sample OHLCV data for testing."""
-    data = []
-    current_date = datetime.utcnow()
-    price = base_price
-    
-    for i in range(num_bars):
-        date = current_date - timedelta(days=num_bars - i)
-        change = random.uniform(-0.02, 0.02)
-        close = price * (1 + change)
-        data.append(OHLCV(
-            timestamp=date,
-            open=close * (1 + random.uniform(-0.005, 0.005)),
-            high=close * (1 + random.uniform(0, 0.01)),
-            low=close * (1 - random.uniform(0, 0.01)),
-            close=close,
-            volume=random.randint(5000000, 20000000),
-        ))
-        price = close
-    
-    return data
+def _period_bars(period: BacktestPeriod) -> int:
+    """Approximate number of daily bars for a backtest period."""
+    return {
+        BacktestPeriod.ONE_WEEK: 5,
+        BacktestPeriod.ONE_MONTH: 22,
+        BacktestPeriod.THREE_MONTHS: 66,
+        BacktestPeriod.SIX_MONTHS: 132,
+        BacktestPeriod.ONE_YEAR: 252,
+    }.get(period, 66)
+
+
+def fetch_backtest_data(symbol: str, num_bars: int) -> List[OHLCV]:
+    """Fetch REAL OHLCV history for backtesting from the unified market layer.
+
+    No fabricated candles: when the live provider is unavailable the backtest
+    returns an empty dataset (and the endpoint surfaces 503) rather than
+    running on random noise.
+    """
+    from app.services import market_data
+
+    candles, src = market_data.get_real_candles(symbol, interval="1d", limit=num_bars)
+    if not candles:
+        return []
+    return [
+        OHLCV(
+            timestamp=c.date,
+            open=c.open,
+            high=c.high,
+            low=c.low,
+            close=c.close,
+            volume=c.volume,
+        )
+        for c in candles
+    ]
 
 
 @router.post("/run", response_model=BacktestResponse)
 async def run_backtest(request: BacktestRequest):
-    """Run a backtest on historical data."""
+    """Run a backtest on real historical data."""
     logger.info("running_backtest", strategy=request.strategy_name, period=request.period)
 
     try:
@@ -105,8 +117,17 @@ async def run_backtest(request: BacktestRequest):
     except ValueError:
         period = BacktestPeriod.ONE_MONTH
 
-    # Generate sample data
-    data = generate_sample_data()
+    # Fetch real OHLCV; default to NIFTY when no symbol is supplied.
+    symbol = request.parameters.get("symbol", "NIFTY")
+    data = fetch_backtest_data(symbol, _period_bars(period))
+    if not data:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Backtest unavailable: no real historical OHLCV could be loaded "
+                f"for {symbol}. Configure a live market-data provider."
+            ),
+        )
 
     result = backtesting_engine.run_backtest(
         strategy_name=request.strategy_name,
@@ -187,19 +208,16 @@ async def list_strategy_types():
 
 @router.get("/sample-data")
 async def get_sample_data(symbol: str = "NIFTY", bars: int = 100):
-    """Get sample OHLCV data for a symbol."""
+    """Get real OHLCV history for a symbol (no fabricated data)."""
     logger.info("getting_sample_data", symbol=symbol, bars=bars)
-    
-    base_prices = {
-        "NIFTY": 25000,
-        "BANKNIFTY": 52000,
-        "RELIANCE": 3000,
-        "HDFCBANK": 1700,
-    }
-    
-    base = base_prices.get(symbol, 10000)
-    data = generate_sample_data(num_bars=bars, base_price=base)
-    
+
+    data = fetch_backtest_data(symbol, bars)
+    if not data:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Real OHLCV unavailable for {symbol}.",
+        )
+
     return [
         {
             "timestamp": d.timestamp.isoformat(),

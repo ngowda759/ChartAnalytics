@@ -206,7 +206,7 @@ export const optionsApi = {
 // Indicators API
 export const indicatorsApi = {
   getIndicators: (symbol: string) =>
-    fetchApi<any>(`/indicators/all/${symbol}`),
+    fetchApi<any>(`/indicators/${symbol}`),
   getEMA: (symbol: string) => fetchApi<any>(`/indicators/ema/${symbol}`),
   getRSI: (symbol: string) => fetchApi<any>(`/indicators/rsi/${symbol}`),
   getMACD: (symbol: string) => fetchApi<any>(`/indicators/macd/${symbol}`),
