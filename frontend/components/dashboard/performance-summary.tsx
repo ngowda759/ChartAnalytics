@@ -90,6 +90,19 @@ export function PerformanceSummary() {
     );
   }
 
+  // No stored trades yet -> truthful empty state, not fabricated metrics.
+  if (!m.total_trades) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+        <TrendingDown className="h-10 w-10 text-muted-foreground/50" />
+        <p className="text-sm font-medium">No trading history available</p>
+        <p className="text-xs text-muted-foreground">
+          Record trades in the journal to see performance metrics.
+        </p>
+      </div>
+    );
+  }
+
   const metrics: {
     label: string;
     value: number | null | undefined;

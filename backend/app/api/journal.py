@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from datetime import datetime, timedelta
-import random
+from datetime import datetime
 import structlog
 
 from app.schemas.journal import (
@@ -15,6 +14,12 @@ from app.schemas.journal import (
 logger = structlog.get_logger()
 router = APIRouter()
 
+# NOTE: There is no journal persistence layer wired in this environment, so the
+# production-safe behaviour is to return a truthful empty state rather than
+# fabricate random trades/P&L. When a real store is added, these endpoints
+# should read from it; until then they return [] / zeroed metrics so the UI can
+# show "No trading history available" instead of fake numbers.
+
 
 @router.get("/", response_model=List[Trade])
 async def get_trades(
@@ -23,104 +28,40 @@ async def get_trades(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """Get user's trade history"""
-    logger.info("fetching_trades", user_id=user_id)
+    """Get user's trade history.
 
-    # Mock trades
-    symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK", "ICICIBANK"]
-    trades = []
-
-    for i in range(min(limit, 20)):
-        entry_price = 24567.85 * random.uniform(0.98, 1.02)
-        exit_price = entry_price * random.uniform(0.97, 1.03)
-        quantity = random.choice([50, 75, 100, 150, 200])
-
-        trade = Trade(
-            id=f"trade_{i + 1}",
-            user_id=user_id,
-            symbol=random.choice(symbols),
-            instrument=random.choice(["futures", "options", "equity"]),
-            type=random.choice(["long", "short"]),
-            entry={
-                "price": round(entry_price, 2),
-                "quantity": quantity,
-                "timestamp": datetime.utcnow() - timedelta(days=random.randint(1, 30)),
-            },
-            exit=(
-                {
-                    "price": round(exit_price, 2),
-                    "quantity": quantity,
-                    "timestamp": datetime.utcnow()
-                    - timedelta(days=random.randint(0, 29)),
-                }
-                if random.random() > 0.3
-                else None
-            ),
-            status=(
-                random.choice(["open", "closed", "cancelled"])
-                if random.random() > 0.2
-                else "closed"
-            ),
-            strategy=random.choice(["ORB", "VWAP", "EMA", "Momentum", "Scalping"]),
-            tags=random.sample(
-                ["intraday", "swing", "options", "futures", "bullish", "bearish"], k=2
-            ),
-            pnl=round(
-                (exit_price - entry_price)
-                * quantity
-                * (1 if random.random() > 0.5 else -1),
-                2,
-            ),
-            fees=round(random.uniform(50, 500), 2),
-            created_at=datetime.utcnow() - timedelta(days=random.randint(1, 30)),
-            updated_at=datetime.utcnow(),
-        )
-        trades.append(trade)
-
-    return trades
+    No persistence layer is configured, so this returns an empty list (a
+    truthful "no trading history" state) rather than fabricated trades.
+    """
+    logger.info("fetching_trades", user_id=user_id, limit=limit, offset=offset)
+    return []
 
 
 @router.get("/{trade_id}", response_model=Trade)
 async def get_trade(trade_id: str):
-    """Get a specific trade"""
+    """Get a specific trade.
+
+    No persistence layer is configured; a non-existent trade is a 404, not a
+    fabricated record.
+    """
     logger.info("fetching_trade", trade_id=trade_id)
-
-    entry_price = 24567.85
-    quantity = 100
-
-    return Trade(
-        id=trade_id,
-        user_id="user_1",
-        symbol="NIFTY",
-        instrument="futures",
-        type="long",
-        entry={
-            "price": entry_price,
-            "quantity": quantity,
-            "timestamp": datetime.utcnow() - timedelta(hours=2),
-        },
-        exit={
-            "price": entry_price * 1.01,
-            "quantity": quantity,
-            "timestamp": datetime.utcnow(),
-        },
-        status="closed",
-        strategy="VWAP",
-        tags=["intraday", "bullish"],
-        pnl=round((entry_price * 1.01 - entry_price) * quantity, 2),
-        fees=200,
-        created_at=datetime.utcnow() - timedelta(hours=2),
-        updated_at=datetime.utcnow(),
-    )
+    raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
 
 @router.post("/", response_model=Trade, status_code=201)
 async def create_trade(trade_data: TradeCreate, user_id: str = "user_1"):
-    """Create a new trade"""
-    logger.info("creating_trade", user_id=user_id)
+    """Create a new trade.
 
+    Constructs the response from the request payload (not fabricated market
+    data). The generated ID is a request-scoped identifier; wire a real store to
+    persist it.
+    """
+    import uuid
+
+    logger.info("creating_trade", user_id=user_id, symbol=trade_data.symbol)
+    now = datetime.utcnow()
     return Trade(
-        id=f"trade_{random.randint(1000, 9999)}",
+        id=f"trade_{uuid.uuid4().hex[:8]}",
         user_id=user_id,
         symbol=trade_data.symbol,
         instrument=trade_data.instrument,
@@ -128,49 +69,24 @@ async def create_trade(trade_data: TradeCreate, user_id: str = "user_1"):
         entry={
             "price": trade_data.entry_price,
             "quantity": trade_data.quantity,
-            "timestamp": datetime.utcnow(),
+            "timestamp": now,
         },
         status="open",
         strategy=trade_data.strategy or "Manual",
         tags=trade_data.tags or [],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now,
+        updated_at=now,
     )
 
 
 @router.put("/{trade_id}", response_model=Trade)
 async def update_trade(trade_id: str, updates: TradeUpdate):
-    """Update a trade (add exit, notes, etc.)"""
+    """Update a trade (add exit, notes, etc.).
+
+    Without persistence there is nothing to update; return 404 truthfully.
+    """
     logger.info("updating_trade", trade_id=trade_id)
-
-    trade = await get_trade(trade_id)
-
-    if updates.exit_price:
-        trade.exit = {
-            "price": updates.exit_price,
-            "quantity": updates.exit_quantity or trade.entry["quantity"],
-            "timestamp": datetime.utcnow(),
-        }
-        trade.status = "closed"
-
-        # Calculate P&L
-        multiplier = 1 if trade.type == "long" else -1
-        trade.pnl = round(
-            (trade.exit["price"] - trade.entry["price"])
-            * trade.exit["quantity"]
-            * multiplier,
-            2,
-        )
-
-    if updates.notes:
-        trade.notes = updates.notes
-
-    if updates.tags:
-        trade.tags = updates.tags
-
-    trade.updated_at = datetime.utcnow()
-
-    return trade
+    raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
 
 @router.get("/metrics/performance", response_model=PerformanceMetrics)

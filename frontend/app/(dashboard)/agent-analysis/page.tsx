@@ -70,6 +70,10 @@ interface AgentAnalysisList {
   sell_count: number;
   hold_count: number;
   results: AgentAnalysisResult[];
+  generated_at?: string;
+  data_timestamp?: string | null;
+  source?: string;
+  is_stale?: boolean;
 }
 
 function ratingVariant(rating: string) {
@@ -123,6 +127,14 @@ export default function AgentAnalysisPage() {
               TradingAgents-style multi-agent pipeline: analysts → debate →
               research manager → trader → risk debate → portfolio manager.
             </p>
+            {data?.source && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Source: <span className="capitalize">{data.source}</span>
+                {data.is_stale && ' (stale)'}
+                {data.generated_at &&
+                  ` · generated ${new Date(data.generated_at).toLocaleString('en-IN')}`}
+              </p>
+            )}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>

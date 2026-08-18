@@ -43,17 +43,19 @@ describe('PerformanceSummary tile', () => {
   });
 
   it('shows N/A for non-derivable metrics instead of fabricating', async () => {
+    // Non-zero trades so metrics render, but profit_factor / avg_rr are null
+    // (non-derivable) -> must show N/A, never a fabricated value.
     getPerformance.mockResolvedValue({
       data: {
-        total_trades: 0,
-        winning_trades: 0,
-        losing_trades: 0,
-        win_rate: 0,
-        average_win: 0,
-        average_loss: 0,
+        total_trades: 5,
+        winning_trades: 3,
+        losing_trades: 2,
+        win_rate: 60,
+        average_win: 1000,
+        average_loss: 500,
         profit_factor: null,
-        total_pnl: 0,
-        expectancy: 0,
+        total_pnl: 2000,
+        expectancy: 300,
         avg_rr: null,
       },
     });
@@ -62,6 +64,27 @@ describe('PerformanceSummary tile', () => {
       // avg_rr null -> N/A, never a fabricated ratio
       expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
       expect(screen.queryByText('1.85:1')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows a truthful empty state when there are no trades', async () => {
+    getPerformance.mockResolvedValue({
+      data: {
+        total_trades: 0,
+        winning_trades: 0,
+        losing_trades: 0,
+        win_rate: 0,
+        average_win: 0,
+        average_loss: 0,
+        profit_factor: 0,
+        total_pnl: 0,
+        expectancy: 0,
+        avg_rr: 0,
+      },
+    });
+    renderWithClient(<PerformanceSummary />);
+    await waitFor(() => {
+      expect(screen.getByText('No trading history available')).toBeInTheDocument();
     });
   });
 
