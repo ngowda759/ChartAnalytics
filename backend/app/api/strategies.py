@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
-@router.get("/", response_model=List[Strategy])
+@router.get("", response_model=List[Strategy])
 async def get_strategies(user_id: str = "user_1"):
     """Get user's strategies"""
     logger.info("fetching_strategies", user_id=user_id)
@@ -65,7 +65,7 @@ async def get_strategy(strategy_id: str):
     )
 
 
-@router.post("/", response_model=Strategy, status_code=201)
+@router.post("", response_model=Strategy, status_code=201)
 async def create_strategy(data: StrategyCreate, user_id: str = "user_1"):
     """Create a new strategy"""
     logger.info("creating_strategy", user_id=user_id)

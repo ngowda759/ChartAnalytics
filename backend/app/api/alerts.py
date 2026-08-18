@@ -21,7 +21,7 @@ router = APIRouter()
 # engine to populate these endpoints.
 
 
-@router.get("/", response_model=List[Alert])
+@router.get("", response_model=List[Alert])
 async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
     """Get user's alerts.
 
@@ -31,7 +31,7 @@ async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
     return []
 
 
-@router.post("/", response_model=Alert, status_code=201)
+@router.post("", response_model=Alert, status_code=201)
 async def create_alert(data: AlertCreate, user_id: str = "user_1"):
     """Create a new alert.
 

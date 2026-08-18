@@ -72,3 +72,37 @@ describe('ScreenerWidget type carries runtime provenance', () => {
   });
 });
 
+describe('fetchApi surfaces backend error detail', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.resetModules();
+  });
+
+  it('returns the backend {"detail": "..."} message for a 503 (e.g. options unavailable)', async () => {
+    const detail = 'Option chain unavailable for NIFTY. No real data provider configured.';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ detail }),
+    }) as unknown as typeof fetch;
+    const mod = require('@/lib/api');
+    const res = await mod.optionsApi.getChain('NIFTY');
+    expect(res.data).toBeNull();
+    expect(res.error).toBe(detail);
+  });
+
+  it('falls back to the HTTP status when the body has no detail string', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ unrelated: true }),
+    }) as unknown as typeof fetch;
+    const mod = require('@/lib/api');
+    const res = await mod.optionsApi.getChain('NIFTY');
+    expect(res.data).toBeNull();
+    expect(res.error).toContain('500');
+  });
+});
+

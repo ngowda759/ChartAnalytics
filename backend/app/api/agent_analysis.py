@@ -53,7 +53,7 @@ async def get_agent_analysis(
 
 
 @router.get(
-    "/",
+    "",
     response_model=AgentAnalysisListResponse,
     summary="Run the pipeline across the watchlist universe",
 )

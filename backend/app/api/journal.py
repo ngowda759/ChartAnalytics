@@ -21,7 +21,7 @@ router = APIRouter()
 # show "No trading history available" instead of fake numbers.
 
 
-@router.get("/", response_model=List[Trade])
+@router.get("", response_model=List[Trade])
 async def get_trades(
     user_id: str = "user_1",
     filters: Optional[TradeFilters] = None,
@@ -48,7 +48,7 @@ async def get_trade(trade_id: str):
     raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
 
 
-@router.post("/", response_model=Trade, status_code=201)
+@router.post("", response_model=Trade, status_code=201)
 async def create_trade(trade_data: TradeCreate, user_id: str = "user_1"):
     """Create a new trade.
 

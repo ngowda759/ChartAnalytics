@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { systemApi, type MarketDataStatus } from '@/lib/api';
 
 const POLL_MS = 60_000;
@@ -12,27 +12,22 @@ const POLL_MS = 60_000;
  *   ● LIVE      yfinance — Updated 10:43:12 IST
  *   ● UNAVAILABLE  Live provider not configured
  *   ● MOCK (DEVELOPMENT MODE)
+ *
+ * Uses the shared React Query cache so the badge deduplicates with any other
+ * component reading /market/status instead of firing an independent interval
+ * per page mount.
  */
 export function MarketStatusBadge() {
-  const [status, setStatus] = useState<MarketDataStatus | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const s = await systemApi.marketStatus();
-        if (active) setStatus(s);
-      } catch {
-        if (active) setStatus(null);
-      }
-    };
-    load();
-    const id = setInterval(load, POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, []);
+  const { data: status } = useQuery<MarketDataStatus>({
+    queryKey: ['market', 'status'],
+    queryFn: async () => {
+      const s = await systemApi.marketStatus();
+      if (!s) throw new Error('Market status unavailable');
+      return s;
+    },
+    refetchInterval: POLL_MS,
+    refetchOnWindowFocus: false,
+  });
 
   if (!status) {
     return (
