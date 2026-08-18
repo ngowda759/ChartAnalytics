@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from datetime import datetime
-import random
+import uuid
 import structlog
 
 from app.schemas.alerts import (
@@ -14,83 +14,53 @@ from app.schemas.alerts import (
 logger = structlog.get_logger()
 router = APIRouter()
 
+# NOTE: No alert persistence/evaluation engine is wired in this environment.
+# The production-safe behaviour is a truthful empty state (no alerts, no
+# notifications) rather than fabricated sample data, so the dashboard shows
+# "No recent alerts" instead of fake notifications. Wire a real store + alert
+# engine to populate these endpoints.
+
 
 @router.get("/", response_model=List[Alert])
 async def get_alerts(user_id: str = "user_1", is_active: Optional[bool] = None):
-    """Get user's alerts"""
+    """Get user's alerts.
+
+    No persistence layer is configured; return an empty list truthfully.
+    """
     logger.info("fetching_alerts", user_id=user_id)
-
-    alerts = [
-        Alert(
-            id="alert_1",
-            user_id=user_id,
-            type="ema_cross",
-            symbol="NIFTY",
-            condition="crosses_above",
-            value=24500,
-            is_active=True,
-            created_at=datetime.utcnow(),
-        ),
-        Alert(
-            id="alert_2",
-            user_id=user_id,
-            type="breakout",
-            symbol="BANKNIFTY",
-            condition="above",
-            value=53000,
-            is_active=True,
-            created_at=datetime.utcnow(),
-        ),
-        Alert(
-            id="alert_3",
-            user_id=user_id,
-            type="pcr_shift",
-            symbol="NIFTY",
-            condition="above",
-            value=1.2,
-            is_active=False,
-            created_at=datetime.utcnow(),
-        ),
-    ]
-
-    if is_active is not None:
-        alerts = [a for a in alerts if a.is_active == is_active]
-
-    return alerts
+    return []
 
 
 @router.post("/", response_model=Alert, status_code=201)
 async def create_alert(data: AlertCreate, user_id: str = "user_1"):
-    """Create a new alert"""
-    logger.info("creating_alert", user_id=user_id, type=data.type)
+    """Create a new alert.
 
+    Constructs the response from the request payload (not fabricated data).
+    The generated ID is a request-scoped identifier; wire a real store to
+    persist it.
+    """
+    logger.info("creating_alert", user_id=user_id, type=data.type)
+    now = datetime.utcnow()
     return Alert(
-        id=f"alert_{random.randint(1000, 9999)}",
+        id=f"alert_{uuid.uuid4().hex[:8]}",
         user_id=user_id,
         type=data.type,
         symbol=data.symbol,
         condition=data.condition,
         value=data.value,
         is_active=True,
-        created_at=datetime.utcnow(),
+        created_at=now,
     )
 
 
 @router.put("/{alert_id}", response_model=Alert)
 async def update_alert(alert_id: str, updates: AlertUpdate):
-    """Update an alert"""
-    logger.info("updating_alert", alert_id=alert_id)
+    """Update an alert.
 
-    return Alert(
-        id=alert_id,
-        user_id="user_1",
-        type="ema_cross",
-        symbol="NIFTY",
-        condition="crosses_above",
-        value=24500,
-        is_active=updates.is_active if updates.is_active is not None else True,
-        created_at=datetime.utcnow(),
-    )
+    Without persistence there is nothing to update; return 404 truthfully.
+    """
+    logger.info("updating_alert", alert_id=alert_id)
+    raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
 
 
 @router.delete("/{alert_id}")
@@ -102,23 +72,13 @@ async def delete_alert(alert_id: str):
 
 @router.get("/notifications", response_model=List[AlertNotification])
 async def get_notifications(user_id: str = "user_1", limit: int = 20):
-    """Get recent alert notifications"""
+    """Get recent alert notifications.
+
+    No alert evaluation engine is configured; return an empty list truthfully
+    so the dashboard shows "No recent alerts" instead of fake notifications.
+    """
     logger.info("fetching_notifications", user_id=user_id)
-
-    notifications = []
-    for i in range(min(limit, 10)):
-        notifications.append(
-            AlertNotification(
-                id=f"notif_{i + 1}",
-                type=random.choice(["ema_cross", "breakout", "oi_spike", "pcr_shift"]),
-                symbol=random.choice(["NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK"]),
-                message=f"Alert triggered for {random.choice(['NIFTY', 'BANKNIFTY'])}",
-                timestamp=datetime.utcnow(),
-                is_read=random.random() > 0.3,
-            )
-        )
-
-    return notifications
+    return []
 
 
 @router.post("/{alert_id}/test")

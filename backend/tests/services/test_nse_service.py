@@ -14,6 +14,7 @@ from app.services import nse_service
 
 def _force_nse_down(monkeypatch):
     """Make every live NSE getter return [] (simulates NSE being unreachable)."""
+    nse_service.clear_nse_cache()
     for fn_name in (
         "get_all_indices",
         "get_sectoral_indices",
@@ -31,6 +32,7 @@ def _force_nse_down(monkeypatch):
 
 def _build(monkeypatch=None):
     """Run the async dashboard builder and return (widgets, source, warnings)."""
+    nse_service.clear_nse_cache()
     return asyncio.run(nse_service.build_nse_dashboard())
 
 

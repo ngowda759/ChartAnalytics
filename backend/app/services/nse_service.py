@@ -13,11 +13,13 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+import time
 from typing import Callable, Dict, List, Optional, Tuple
 
 import structlog
 
 from app.schemas.scanner import ScreenerRow, ScreenerWidget
+from app.services.cache import TTLCache
 
 logger = structlog.get_logger()
 
@@ -31,20 +33,24 @@ NSE_TIMEOUT_SECONDS = 8.0
 # starving the FastAPI event loop. Bounded to avoid hammering NSE.
 _NSE_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="nse")
 
+# Short-lived cache of successful live NSE datasets so a transient NSE failure
+# serves the last real data (marked stale) instead of synthetic fallback.
+_NSE_CACHE: TTLCache = TTLCache(ttl=120)
+_FALLBACK_SOURCE = "synthetic_fallback"
+
 
 def _call_with_timeout(fn: Callable, *args, timeout: float = NSE_TIMEOUT_SECONDS, **kwargs):
-    """Run a sync callable with a hard timeout.
-
-    If the call exceeds ``timeout`` it is abandoned (the underlying thread keeps
-    running until nsetools returns, but we stop waiting) and ``None`` is returned
-    so the caller can fall back. This keeps the dashboard responsive even when a
-    single NSE endpoint hangs.
-    """
+    """Run a sync callable in the thread pool (caller applies the timeout)."""
     loop = asyncio.get_event_loop()
     try:
         return loop.run_in_executor(_NSE_EXECUTOR, lambda: fn(*args, **kwargs))
     except RuntimeError:  # pragma: no cover - no running loop
         return fn(*args, **kwargs)
+
+
+def clear_nse_cache() -> None:
+    """Clear the short-lived NSE dataset cache (used by tests / refresh)."""
+    _NSE_CACHE.clear()
 
 
 def _get_nse():
@@ -148,62 +154,83 @@ def _sectoral_indices(items: List[Dict]) -> List[Dict]:
     return [i for i in items if i.get("key") == "SECTORAL INDICES"]
 
 
+def _log_nse(operation: str, started: float, count: int, status: str = "success", error: str = ""):
+    logger.info(
+        "nse_request",
+        provider="nse",
+        operation=operation,
+        duration_ms=round((time.time() - started) * 1000, 1),
+        source="nse",
+        row_count=count,
+        status=status,
+        error=error,
+    )
+
+
 def get_top_gainers(limit: int = 20) -> List[ScreenerRow]:
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("top_gainers", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_top_gainers() or []
         rows = [_gainer_to_row(d) for d in data[:limit]]
-        logger.info("nse_top_gainers", count=len(rows))
+        _log_nse("top_gainers", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_top_gainers_failed", error=str(exc))
+        _log_nse("top_gainers", started, 0, status="error", error=str(exc))
         return []
 
 
 def get_top_losers(limit: int = 20) -> List[ScreenerRow]:
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("top_losers", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_top_losers() or []
         rows = [_gainer_to_row(d) for d in data[:limit]]
-        logger.info("nse_top_losers", count=len(rows))
+        _log_nse("top_losers", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_top_losers_failed", error=str(exc))
+        _log_nse("top_losers", started, 0, status="error", error=str(exc))
         return []
 
 
 def get_all_indices(limit: int = 50) -> List[ScreenerRow]:
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("all_indices", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_all_index_quote() or []
         data = _broad_market_indices(data)
         rows = [_index_to_row(d) for d in data[:limit]]
-        logger.info("nse_all_indices", count=len(rows))
+        _log_nse("all_indices", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_all_indices_failed", error=str(exc))
+        _log_nse("all_indices", started, 0, status="error", error=str(exc))
         return []
 
 
 def get_sectoral_indices(limit: int = 50) -> List[ScreenerRow]:
     """Only sectoral indices (NIFTY IT, NIFTY BANK, AUTO, etc.), live NSE."""
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("sectoral_indices", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_all_index_quote() or []
         data = _sectoral_indices(data)
         rows = [_index_to_row(d) for d in data[:limit]]
-        logger.info("nse_sectoral_indices", count=len(rows))
+        _log_nse("sectoral_indices", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_sectoral_indices_failed", error=str(exc))
+        _log_nse("sectoral_indices", started, 0, status="error", error=str(exc))
         return []
 
 
@@ -230,47 +257,53 @@ def get_index_quotes(limit: int = 50) -> List[Dict]:
     nse = _get_nse()
     if nse is None:
         return []
+    started = time.time()
     try:
         data = nse.get_all_index_quote() or []
         wanted = set(_WANTED_INDEX_SYMBOLS)
         picked = [d for d in data if (d.get("indexSymbol") or d.get("index")) in wanted]
         if not picked:
+            _log_nse("index_quotes", started, 0, status="unavailable", error="no_matching_indices")
             return []
         picked.sort(key=lambda d: list(_WANTED_INDEX_SYMBOLS).index(
             d.get("indexSymbol") or d.get("index")
         ))
-        logger.info("nse_index_quotes", count=len(picked[:limit]))
+        _log_nse("index_quotes", started, len(picked[:limit]))
         return picked[:limit]
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_index_quotes_failed", error=str(exc))
+        _log_nse("index_quotes", started, 0, status="error", error=str(exc))
         return []
 
 
 def get_52_week_high(limit: int = 25) -> List[ScreenerRow]:
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("52wk_high", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_52_week_high() or []
         rows = [_52w_to_row(d) for d in data[:limit]]
-        logger.info("nse_52wk_high", count=len(rows))
+        _log_nse("52wk_high", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_52wk_high_failed", error=str(exc))
+        _log_nse("52wk_high", started, 0, status="error", error=str(exc))
         return []
 
 
 def get_52_week_low(limit: int = 25) -> List[ScreenerRow]:
+    started = time.time()
     nse = _get_nse()
     if nse is None:
+        _log_nse("52wk_low", started, 0, status="unavailable", error="nsetools_unavailable")
         return []
     try:
         data = nse.get_52_week_low() or []
         rows = [_52w_to_row(d) for d in data[:limit]]
-        logger.info("nse_52wk_low", count=len(rows))
+        _log_nse("52wk_low", started, len(rows))
         return rows
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_52wk_low_failed", error=str(exc))
+        _log_nse("52wk_low", started, 0, status="error", error=str(exc))
         return []
 
 
@@ -290,9 +323,10 @@ def get_nr7_breakout_candidates(limit: int = 25) -> List[ScreenerRow]:
     gainers = get_top_gainers(50)
     candidates: List[ScreenerRow] = []
     for r in gainers:
-        o = r.extra.get("open") or 0
-        h = r.extra.get("high") or 0
-        lo = r.extra.get("low") or 0
+        ex = r.extra or {}
+        o = ex.get("open") or 0
+        h = ex.get("high") or 0
+        lo = ex.get("low") or 0
         ltp = r.ltp or 0
         vol = r.volume or 0
         if not (h and lo and ltp and vol):
@@ -313,13 +347,13 @@ def get_nr7_breakout_candidates(limit: int = 25) -> List[ScreenerRow]:
                     "open": o,
                     "high": h,
                     "low": lo,
-                    "prev_close": r.extra.get("prev_close"),
+                    "prev_close": ex.get("prev_close"),
                     "range_pct": round(range_pct * 100, 2),
                 },
             )
         )
     # tightest range first (most "NR7-like")
-    candidates.sort(key=lambda r: r.extra.get("range_pct", 999))
+    candidates.sort(key=lambda r: (r.extra or {}).get("range_pct", 999))
     logger.info("nse_nr7_candidates", count=len(candidates))
     return candidates[:limit]
 
@@ -334,7 +368,8 @@ def get_potential_breakouts(limit: int = 25) -> List[ScreenerRow]:
     highs = get_52_week_high(50)
     candidates: List[ScreenerRow] = []
     for r in highs:
-        new_high = r.extra.get("new_52wh") or 0
+        ex = r.extra or {}
+        new_high = ex.get("new_52wh") or 0
         ltp = r.ltp or 0
         if not (new_high and ltp):
             continue
@@ -348,8 +383,8 @@ def get_potential_breakouts(limit: int = 25) -> List[ScreenerRow]:
                 volume=None,
                 extra={
                     "new_52wh": new_high,
-                    "prev_52wh": r.extra.get("prev_52wh"),
-                    "prev_close": r.extra.get("prev_close"),
+                    "prev_52wh": ex.get("prev_52wh"),
+                    "prev_close": ex.get("prev_close"),
                     "distance_from_high_pct": round(distance_pct, 2),
                 },
             )
@@ -359,7 +394,84 @@ def get_potential_breakouts(limit: int = 25) -> List[ScreenerRow]:
     return candidates[:limit]
 
 
-def build_nse_widget(widget_id: str, title: str, description: str, rows: List[ScreenerRow], columns: List[str]) -> ScreenerWidget:
+def _nr7_from_rows(gainers: List[ScreenerRow]) -> List[ScreenerRow]:
+    """Recompute the NR7-proxy screener from already-fetched gainer rows.
+
+    Used when the live fetch failed but cached gainer rows are available, so the
+    derived NR7 widget can be marked cached rather than recomputed from a
+    (failing) live call.
+    """
+    candidates: List[ScreenerRow] = []
+    for r in gainers:
+        ex = r.extra or {}
+        h = ex.get("high") or 0
+        lo = ex.get("low") or 0
+        ltp = r.ltp or 0
+        vol = r.volume or 0
+        if not (h and lo and ltp and vol):
+            continue
+        range_pct = (h - lo) / ltp if ltp else 0
+        if h <= 0 or (h - ltp) / h > 0.015:
+            continue
+        candidates.append(
+            ScreenerRow(
+                symbol=r.symbol,
+                name=r.name,
+                ltp=ltp,
+                change_percent=r.change_percent,
+                volume=vol,
+                extra={
+                    "open": ex.get("open"),
+                    "high": h,
+                    "low": lo,
+                    "prev_close": ex.get("prev_close"),
+                    "range_pct": round(range_pct * 100, 2),
+                },
+            )
+        )
+    candidates.sort(key=lambda r: (r.extra or {}).get("range_pct", 999))
+    return candidates
+
+
+def _pbo_from_rows(highs: List[ScreenerRow]) -> List[ScreenerRow]:
+    """Recompute the potential-breakouts screener from cached 52w-high rows."""
+    candidates: List[ScreenerRow] = []
+    for r in highs:
+        ex = r.extra or {}
+        new_high = ex.get("new_52wh") or 0
+        ltp = r.ltp or 0
+        if not (new_high and ltp):
+            continue
+        distance_pct = ((new_high - ltp) / new_high) * 100 if new_high else 0
+        candidates.append(
+            ScreenerRow(
+                symbol=r.symbol,
+                name=r.name,
+                ltp=ltp,
+                change_percent=r.change_percent,
+                volume=None,
+                extra={
+                    "new_52wh": new_high,
+                    "prev_52wh": ex.get("prev_52wh"),
+                    "prev_close": ex.get("prev_close"),
+                    "distance_from_high_pct": round(distance_pct, 2),
+                },
+            )
+        )
+    candidates.sort(key=lambda r: r.change_percent or 0, reverse=True)
+    return candidates
+
+
+def build_nse_widget(
+    widget_id: str,
+    title: str,
+    description: str,
+    rows: List[ScreenerRow],
+    columns: List[str],
+    status: str = "live",
+    source: str = "nse",
+    error: Optional[str] = None,
+) -> ScreenerWidget:
     return ScreenerWidget(
         id=widget_id,
         title=title,
@@ -368,6 +480,9 @@ def build_nse_widget(widget_id: str, title: str, description: str, rows: List[Sc
         columns=columns,
         rows=rows,
         last_updated=_now(),
+        status=status,
+        source=source,
+        error=error,
     )
 
 
@@ -390,171 +505,269 @@ async def _fetch_with_timeout(fn, *args) -> List[ScreenerRow]:
     Returns whatever the getter returns (live rows, or [] when NSE is down) so
     the caller can decide whether to fall back. Timeouts/exceptions also yield [].
     """
+    started = time.time()
+    name = getattr(fn, "__name__", "unknown")
     try:
         result = await asyncio.wait_for(
             asyncio.get_event_loop().run_in_executor(_NSE_EXECUTOR, lambda: fn(*args)),
             timeout=NSE_TIMEOUT_SECONDS,
         )
+        logger.info(
+            "nse_dataset",
+            dataset=name,
+            duration_ms=round((time.time() - started) * 1000, 1),
+            row_count=len(result or []),
+            status="success" if result else "empty",
+        )
         return result or []
     except asyncio.TimeoutError:
-        logger.warning("nse_dataset_timeout", dataset=getattr(fn, "__name__", "unknown"))
+        logger.warning("nse_dataset_timeout", dataset=name, duration_ms=round((time.time() - started) * 1000, 1))
         return []
     except Exception as exc:  # pragma: no cover - network dependent
-        logger.warning("nse_dataset_failed", dataset=getattr(fn, "__name__", "unknown"), error=str(exc))
+        logger.warning("nse_dataset_failed", dataset=name, error=str(exc))
         return []
+
+
+async def _dataset_with_cache(key: str, fn, *args) -> Tuple[List[ScreenerRow], str, str]:
+    """Fetch a dataset with a short-lived cache fallback.
+
+    Returns ``(rows, status, source)``:
+    - live rows  -> ("live", "nse")
+    - cached rows served because the live fetch failed -> ("cached", "cache")
+    - no rows at all -> ("unavailable", "none")
+
+    Successful live results are cached so a subsequent transient NSE failure
+    serves the last real data (marked cached/stale) rather than synthetic rows.
+    """
+    rows = await _fetch_with_timeout(fn, *args)
+    if rows:
+        _NSE_CACHE.set(key, rows)
+        return rows, "live", "nse"
+    cached = _NSE_CACHE.get(key)
+    if cached:
+        return cached, "cached", "cache"
+    return [], "unavailable", "none"
 
 
 async def build_nse_dashboard() -> Tuple[List[ScreenerWidget], str, List[str]]:
     """Build a dashboard of NSE-backed screener widgets.
 
-    Each widget tries live NSE data first (fetched in parallel with a bounded
-    timeout) and falls back to synthetic rows when the live source is
-    unreachable (market closed, NSE blocking the request, nsetools missing, or a
-    dataset timing out) so the dashboard is never empty.
+    Each dataset is fetched independently and in parallel with a bounded
+    timeout, so one NSE failure never breaks the whole dashboard. Each widget
+    carries its own ``status``/``source`` so the UI can render live / cached /
+    fallback / unavailable per tile.
 
-    Returns ``(widgets, source, warnings)`` where ``source`` is "live" when every
-    dataset was live, "synthetic_fallback" when any widget used fallback data,
-    and ``warnings`` lists the datasets that were unavailable.
+    Fallback order per widget:
+        live NSE  ->  cached real data (stale)  ->  labelled synthetic fallback
+    A widget is only "unavailable" when there is no live data AND no cache AND
+    no synthetic fallback exists for it.
+
+    Returns ``(widgets, source, warnings)`` where ``source`` is "live" when
+    every dataset was live, "cached" when any widget served cached real data,
+    "synthetic_fallback" when any widget used fallback data, and "unavailable"
+    when no data could be obtained.
     """
     warnings: List[str] = []
     any_fallback = False
+    any_cached = False
 
-    async def _dataset(fn, *args, key: str) -> List[ScreenerRow]:
-        rows = await _fetch_with_timeout(fn, *args)
-        if not rows:
-            warnings.append(f"NSE {key} unavailable; showing fallback data")
+    (indices_r, indices_st, indices_src), \
+        (sectoral_r, sectoral_st, sectoral_src), \
+        (gainers_r, gainers_st, gainers_src), \
+        (losers_r, losers_st, losers_src), \
+        (high52_r, high52_st, high52_src), \
+        (low52_r, low52_st, low52_src) = await asyncio.gather(
+        _dataset_with_cache("indices", get_all_indices, 50),
+        _dataset_with_cache("sectoral", get_sectoral_indices, 50),
+        _dataset_with_cache("gainers", get_top_gainers, 20),
+        _dataset_with_cache("losers", get_top_losers, 20),
+        _dataset_with_cache("high52", get_52_week_high, 25),
+        _dataset_with_cache("low52", get_52_week_low, 25),
+    )
+
+    def _note(st: str, label: str):
+        nonlocal any_fallback, any_cached
+        if st == "cached":
+            any_cached = True
+            warnings.append(f"NSE {label} temporarily unavailable; showing cached data")
+        elif st == "unavailable":
             any_fallback = True
-            return None  # signal fallback needed
-        return rows
+            warnings.append(f"NSE {label} unavailable; showing fallback data")
 
     widgets: List[ScreenerWidget] = []
 
-    # Fetch independent datasets in parallel (bounded by the thread pool).
-    indices_r, sectoral_r, gainers_r, losers_r, high52_r, low52_r = await asyncio.gather(
-        _dataset(get_all_indices, 50, key="broad-market indices"),
-        _dataset(get_sectoral_indices, 50, key="sectoral indices"),
-        _dataset(get_top_gainers, 20, key="top gainers"),
-        _dataset(get_top_losers, 20, key="top losers"),
-        _dataset(get_52_week_high, 25, key="52-week highs"),
-        _dataset(get_52_week_low, 25, key="52-week lows"),
-    )
-
-    indices = indices_r or _fallback_indices()
-    indices_momentum = sorted(indices, key=lambda r: abs(r.change_percent or 0), reverse=True)[:8]
-    widgets.append(
-        build_nse_widget(
-            "indices_momentum",
-            "Indices Momentum",
+    # Indices momentum
+    if indices_r:
+        _note(indices_st, _DATASET_LABELS["indices"])
+        indices_momentum = sorted(indices_r, key=lambda r: abs(r.change_percent or 0), reverse=True)[:8]
+        widgets.append(build_nse_widget(
+            "indices_momentum", "Indices Momentum",
             "Live NSE broad-market & sectoral indices ranked by absolute % change",
-            indices_momentum,
-            ["symbol", "change_percent", "ltp"],
-        )
-    )
+            indices_momentum, ["symbol", "change_percent", "ltp"],
+            status=indices_st, source=indices_src,
+        ))
+    else:
+        _note(indices_st, _DATASET_LABELS["indices"])
+        widgets.append(build_nse_widget(
+            "indices_momentum", "Indices Momentum",
+            "Live NSE broad-market & sectoral indices ranked by absolute % change",
+            _fallback_indices(), ["symbol", "change_percent", "ltp"],
+            status="fallback", source="synthetic",
+        ))
 
-    sectoral = sectoral_r or _fallback_sectoral_indices()
-    sectoral_winners = [r for r in sectoral if (r.change_percent or 0) > 0][:8]
-    if not sectoral_winners:
+    # Sectoral winners
+    if sectoral_r:
+        _note(sectoral_st, _DATASET_LABELS["sectoral"])
+        sectoral_winners = [r for r in sectoral_r if (r.change_percent or 0) > 0][:8]
+        if not sectoral_winners:
+            sectoral_winners = _fallback_sectoral_winners()
+            sec_st, sec_src = "fallback", "synthetic"
+        else:
+            sec_st, sec_src = sectoral_st, sectoral_src
+    else:
+        _note(sectoral_st, _DATASET_LABELS["sectoral"])
         sectoral_winners = _fallback_sectoral_winners()
-    widgets.append(
-        build_nse_widget(
-            "sectoral_winners",
-            "Sectoral Winners",
-            "Sectoral indices trading positive today (live NSE)",
-            sectoral_winners,
-            ["symbol", "change_percent", "ltp"],
-        )
-    )
+        sec_st, sec_src = "fallback", "synthetic"
+    widgets.append(build_nse_widget(
+        "sectoral_winners", "Sectoral Winners",
+        "Sectoral indices trading positive today (live NSE)",
+        sectoral_winners, ["symbol", "change_percent", "ltp"],
+        status=sec_st, source=sec_src,
+    ))
 
-    gainers = gainers_r or _fallback_gainers()
-    widgets.append(
-        build_nse_widget(
-            "top_gainers",
-            "Top Gainers",
-            "Live NSE top gainers",
-            gainers,
-            ["symbol", "change_percent", "ltp", "volume"],
-        )
-    )
+    # Top gainers
+    if gainers_r:
+        _note(gainers_st, _DATASET_LABELS["gainers"])
+        g_rows, g_st, g_src = gainers_r, gainers_st, gainers_src
+    else:
+        _note(gainers_st, _DATASET_LABELS["gainers"])
+        g_rows, g_st, g_src = _fallback_gainers(), "fallback", "synthetic"
+    widgets.append(build_nse_widget(
+        "top_gainers", "Top Gainers", "Live NSE top gainers",
+        g_rows, ["symbol", "change_percent", "ltp", "volume"],
+        status=g_st, source=g_src,
+    ))
 
-    losers = losers_r or _fallback_losers()
-    widgets.append(
-        build_nse_widget(
-            "top_losers",
-            "Top Losers",
-            "Live NSE top losers",
-            losers,
-            ["symbol", "change_percent", "ltp", "volume"],
-        )
-    )
+    # Top losers
+    if losers_r:
+        _note(losers_st, _DATASET_LABELS["losers"])
+        l_rows, l_st, l_src = losers_r, losers_st, losers_src
+    else:
+        _note(losers_st, _DATASET_LABELS["losers"])
+        l_rows, l_st, l_src = _fallback_losers(), "fallback", "synthetic"
+    widgets.append(build_nse_widget(
+        "top_losers", "Top Losers", "Live NSE top losers",
+        l_rows, ["symbol", "change_percent", "ltp", "volume"],
+        status=l_st, source=l_src,
+    ))
 
-    high52 = high52_r or _fallback_52_week_high()
-    widgets.append(
-        build_nse_widget(
-            "fifty_two_week_high",
-            "52-Week High",
-            "Stocks that hit a new 52-week high today (live NSE)",
-            high52,
-            ["symbol", "change_percent", "ltp", "extra.new_52wh"],
-        )
-    )
+    # 52-week high
+    if high52_r:
+        _note(high52_st, _DATASET_LABELS["high52"])
+        h_rows, h_st, h_src = high52_r, high52_st, high52_src
+    else:
+        _note(high52_st, _DATASET_LABELS["high52"])
+        h_rows, h_st, h_src = _fallback_52_week_high(), "fallback", "synthetic"
+    widgets.append(build_nse_widget(
+        "fifty_two_week_high", "52-Week High",
+        "Stocks that hit a new 52-week high today (live NSE)",
+        h_rows, ["symbol", "change_percent", "ltp", "extra.new_52wh"],
+        status=h_st, source=h_src,
+    ))
 
-    low52 = low52_r or _fallback_52_week_low()
-    widgets.append(
-        build_nse_widget(
-            "fifty_two_week_low",
-            "52-Week Low",
-            "Stocks that hit a new 52-week low today (live NSE)",
-            low52,
-            ["symbol", "change_percent", "ltp", "extra.new_52wh"],
-        )
-    )
+    # 52-week low
+    if low52_r:
+        _note(low52_st, _DATASET_LABELS["low52"])
+        lo_rows, lo_st, lo_src = low52_r, low52_st, low52_src
+    else:
+        _note(low52_st, _DATASET_LABELS["low52"])
+        lo_rows, lo_st, lo_src = _fallback_52_week_low(), "fallback", "synthetic"
+    widgets.append(build_nse_widget(
+        "fifty_two_week_low", "52-Week Low",
+        "Stocks that hit a new 52-week low today (live NSE)",
+        lo_rows, ["symbol", "change_percent", "ltp", "extra.new_52wh"],
+        status=lo_st, source=lo_src,
+    ))
 
-    # NR7 / breakouts are derived from gainers + 52w-high above; fall back if those
-    # were unavailable (recompute cheaply from live rows when present).
-    nr7_rows = get_nr7_breakout_candidates(25) if gainers_r else []
-    if not nr7_rows:
+    # NR7 / breakouts are derived from gainers + 52w-high above. When those base
+    # datasets were cached (live failed but stale real data was served), recompute
+    # the derived screeners from the cached rows so the derived widget is also
+    # marked cached rather than mislabelled live.
+    if gainers_r:
+        if gainers_st == "cached":
+            nr7_rows = _nr7_from_rows(gainers_r)
+            nr7_st, nr7_src = "cached", "cache"
+        else:
+            nr7_rows = get_nr7_breakout_candidates(25)
+            nr7_st, nr7_src = "live", "nse"
+        if not nr7_rows:
+            nr7_rows = _fallback_nr7_breakouts()
+            nr7_st, nr7_src = "fallback", "synthetic"
+            if not any("NR7 breakout candidates" in w for w in warnings):
+                warnings.append("NSE NR7 breakout candidates unavailable; showing fallback data")
+                any_fallback = True
+    else:
         nr7_rows = _fallback_nr7_breakouts()
+        nr7_st, nr7_src = "fallback", "synthetic"
         if not any("NR7 breakout candidates" in w for w in warnings):
             warnings.append("NSE NR7 breakout candidates unavailable; showing fallback data")
             any_fallback = True
-    widgets.append(
-        ScreenerWidget(
-            id="copy-morning-scanner-for-buy-nr7-based-breakout-8",
-            title="Morning Scanner - NR7 Breakout (Buy)",
-            description=(
-                "Today's advancing stocks with the tightest intraday range "
-                "(NR7 proxy) and a close near the day high, ranked by range "
-                "tightness. Live NSE data."
-            ),
-            timeframe="daily",
-            columns=["symbol", "change_percent", "ltp", "volume", "extra.range_pct"],
-            rows=nr7_rows,
-            last_updated=_now(),
-        )
-    )
+    widgets.append(ScreenerWidget(
+        id="copy-morning-scanner-for-buy-nr7-based-breakout-8",
+        title="Morning Scanner - NR7 Breakout (Buy)",
+        description=(
+            "Today's advancing stocks with the tightest intraday range "
+            "(NR7 proxy) and a close near the day high, ranked by range "
+            "tightness. Live NSE data."
+        ),
+        timeframe="daily",
+        columns=["symbol", "change_percent", "ltp", "volume", "extra.range_pct"],
+        rows=nr7_rows,
+        last_updated=_now(),
+        status=nr7_st,
+        source=nr7_src,
+    ))
 
-    pbo_rows = get_potential_breakouts(25) if high52_r else []
-    if not pbo_rows:
+    if high52_r:
+        if high52_st == "cached":
+            pbo_rows = _pbo_from_rows(high52_r)
+            pbo_st, pbo_src = "cached", "cache"
+        else:
+            pbo_rows = get_potential_breakouts(25)
+            pbo_st, pbo_src = "live", "nse"
+        if not pbo_rows:
+            pbo_rows = _fallback_potential_breakouts()
+            pbo_st, pbo_src = "fallback", "synthetic"
+            if not any("potential breakouts" in w for w in warnings):
+                warnings.append("NSE potential breakouts unavailable; showing fallback data")
+                any_fallback = True
+    else:
         pbo_rows = _fallback_potential_breakouts()
+        pbo_st, pbo_src = "fallback", "synthetic"
         if not any("potential breakouts" in w for w in warnings):
             warnings.append("NSE potential breakouts unavailable; showing fallback data")
             any_fallback = True
-    widgets.append(
-        ScreenerWidget(
-            id="potential-breakouts",
-            title="Potential Breakouts",
-            description=(
-                "Stocks that printed a new 52-week high today (live NSE), "
-                "ranked by % change. These are the genuine breakouts."
-            ),
-            timeframe="daily",
-            columns=["symbol", "change_percent", "ltp", "extra.new_52wh", "extra.distance_from_high_pct"],
-            rows=pbo_rows,
-            last_updated=_now(),
-        )
-    )
+    widgets.append(ScreenerWidget(
+        id="potential-breakouts",
+        title="Potential Breakouts",
+        description=(
+            "Stocks that printed a new 52-week high today (live NSE), "
+            "ranked by % change. These are the genuine breakouts."
+        ),
+        timeframe="daily",
+        columns=["symbol", "change_percent", "ltp", "extra.new_52wh", "extra.distance_from_high_pct"],
+        rows=pbo_rows,
+        last_updated=_now(),
+        status=pbo_st,
+        source=pbo_src,
+    ))
 
-    source = "synthetic_fallback" if any_fallback else "live"
+    if any_fallback:
+        source = "synthetic_fallback"
+    elif any_cached:
+        source = "cached"
+    else:
+        source = "live"
     return widgets, source, warnings
 
 
@@ -759,7 +972,7 @@ def _fallback_nr7_breakouts(limit: int = 12) -> List[ScreenerRow]:
                 )
             )
         )
-    rows.sort(key=lambda r: r.extra.get("range_pct", 999))
+    rows.sort(key=lambda r: (r.extra or {}).get("range_pct", 999))
     return rows
 
 

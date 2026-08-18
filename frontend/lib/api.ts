@@ -1,19 +1,39 @@
 // API Client for ChartAnalytics Backend
 
-const getApiBaseUrl = () => {
-  // Use environment variable if set, otherwise use relative URL for proxy
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+/**
+ * Resolve the canonical API base URL.
+ *
+ * Accepts NEXT_PUBLIC_API_URL in any of these forms and normalizes to a base
+ * ending in `/api/v1` (no trailing slash):
+ *   - http://localhost:8000
+ *   - http://localhost:8000/
+ *   - http://localhost:8000/api/v1
+ *   - http://localhost:8000/api/v1/
+ *
+ * This prevents both `/api/v1/api/v1` (double prefix) and missing `/api/v1`.
+ */
+const getApiBaseUrl = (): string => {
+  const raw = process.env.NEXT_PUBLIC_API_URL;
+  if (raw) {
+    // Strip trailing slashes, then ensure it ends with /api/v1 exactly once.
+    let url = raw.replace(/\/+$/, '');
+    if (!url.endsWith('/api/v1')) {
+      url = `${url}/api/v1`;
+    }
+    return url;
   }
-  // Fallback to relative URL (works with Next.js API proxy)
+  // Relative URL for browser (works with Next.js API proxy).
   if (typeof window !== 'undefined') {
     return '/api/v1';
   }
-  // Server-side fallback for SSR
+  // Server-side SSR fallback.
   return 'http://localhost:8000/api/v1';
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+/** Test-only export of the resolved base URL (not for production use). */
+export const __API_BASE_URL = API_BASE_URL;
 
 interface ApiResponse<T> {
   data: T;
@@ -39,6 +59,11 @@ export interface ScreenerWidget {
   columns: string[];
   rows: ScreenerRow[];
   last_updated: string;
+  // Per-widget provenance added by the runtime repair: lets the UI render
+  // live / cached / fallback / unavailable distinctly.
+  status?: 'live' | 'cached' | 'fallback' | 'unavailable' | 'error';
+  source?: 'nse' | 'broker' | 'cache' | 'synthetic' | 'none';
+  error?: string | null;
 }
 
 export interface ScreenerDashboard {
@@ -52,7 +77,7 @@ export interface ScreenerDashboard {
 /** Envelope returned by /api/v1/scanner/nse-dashboard. */
 export interface ScreenerDashboardResponse {
   success: boolean;
-  source: 'live' | 'synthetic_fallback' | 'unknown';
+  source: 'live' | 'cached' | 'synthetic_fallback' | 'unknown';
   data: ScreenerDashboard;
   warnings: string[];
   generated_at?: string;
@@ -125,7 +150,12 @@ export interface OHLCResponse {
 }
 
 export const marketApi = {
-  getQuotes: () => fetchApi<MarketQuote[]>('/market/quotes'),
+  getQuotes: (symbols?: string[]) => {
+    const list = symbols && symbols.length ? symbols.join(',') : '';
+    return fetchApi<MarketQuote[]>(
+      `/market/quotes${list ? `?symbols=${encodeURIComponent(list)}` : ''}`
+    );
+  },
   // Indices are mapped to a camelCase MarketQuote by the consuming component;
   // keep the raw snake_case backend shape here.
   getIndices: () => fetchApi<Record<string, unknown>[]>('/market/indices'),

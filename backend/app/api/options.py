@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime, timedelta
-import random
 import structlog
 
 from app.schemas.options import (
@@ -19,12 +18,27 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+def _unavailable(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=503,
+        detail=(
+            f"{detail} Live option data is currently unavailable "
+            "(no real data provider configured or market closed)."
+        ),
+    )
+
+
 @router.get("/chain/{symbol}", response_model=OptionChain)
 async def get_option_chain(
     symbol: str,
     expiry: Optional[str] = Query(None, description="Expiry date (YYYY-MM-DD)"),
 ):
-    """Get option chain for a symbol"""
+    """Get option chain for a symbol.
+
+    Only real option-chain data is returned. When no live provider is
+    configured (or the market is closed) the endpoint returns 503 with a
+    clear message instead of fabricated strikes/OI/IV.
+    """
     logger.info("fetching_option_chain", symbol=symbol, expiry=expiry)
 
     if expiry is None:
@@ -33,107 +47,49 @@ async def get_option_chain(
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    # Use analysis or generate mock data
-    if analysis:
-        spot_price = analysis.spot_price
-        pcr = analysis.pcr
-        max_pain = analysis.max_pain
-        total_call_oi = analysis.total_call_oi
-        total_put_oi = analysis.total_put_oi
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"Option chain unavailable for {symbol}.")
 
-        calls = []
-        puts = []
-        for s in analysis.strikes:
-            calls.append(
-                OptionData(
-                    strike=s.strike,
-                    oi=s.call_oi,
-                    change_oi=s.call_change_oi,
-                    volume=s.call_volume,
-                    iv=s.call_iv,
-                    ltp=s.call_ltp,
-                    bid=s.call_ltp * 0.98,
-                    ask=s.call_ltp * 1.02,
-                )
+    spot_price = analysis.spot_price
+    pcr = analysis.pcr
+    max_pain = analysis.max_pain
+    total_call_oi = analysis.total_call_oi
+    total_put_oi = analysis.total_put_oi
+
+    calls = []
+    puts = []
+    for s in analysis.strikes:
+        calls.append(
+            OptionData(
+                strike=s.strike,
+                oi=s.call_oi,
+                change_oi=s.call_change_oi,
+                volume=s.call_volume,
+                iv=s.call_iv,
+                ltp=s.call_ltp,
+                bid=round(s.call_ltp * 0.98, 2),
+                ask=round(s.call_ltp * 1.02, 2),
             )
-            puts.append(
-                OptionData(
-                    strike=s.strike,
-                    oi=s.put_oi,
-                    change_oi=s.put_change_oi,
-                    volume=s.put_volume,
-                    iv=s.put_iv,
-                    ltp=s.put_ltp,
-                    bid=s.put_ltp * 0.98,
-                    ask=s.put_ltp * 1.02,
-                )
-            )
-    else:
-        spot_price = (
-            24500
-            if symbol.upper() in ["NIFTY", "NIFTY 50"]
-            else 52400 if symbol.upper() in ["BANKNIFTY", "NIFTY BANK"] else 23400
         )
-        strikes = [spot_price + (i - 10) * 100 for i in range(21)]
-
-        calls = []
-        puts = []
-        for strike in strikes:
-            dist_from_spot = abs(strike - spot_price) / spot_price
-            iv = 15 + dist_from_spot * 100 + random.uniform(-2, 2)
-            iv = max(10, min(50, iv))
-
-            calls.append(
-                OptionData(
-                    strike=strike,
-                    oi=random.randint(10000, 500000),
-                    change_oi=random.randint(-50000, 100000),
-                    volume=random.randint(1000, 100000),
-                    iv=round(iv, 2),
-                    ltp=round(
-                        max(
-                            0.05,
-                            (spot_price - strike + random.uniform(-50, 50))
-                            * random.uniform(0.01, 0.05),
-                        ),
-                        2,
-                    ),
-                    bid=round(random.uniform(0.5, 5), 2),
-                    ask=round(random.uniform(0.5, 5), 2),
-                )
+        puts.append(
+            OptionData(
+                strike=s.strike,
+                oi=s.put_oi,
+                change_oi=s.put_change_oi,
+                volume=s.put_volume,
+                iv=s.put_iv,
+                ltp=s.put_ltp,
+                bid=round(s.put_ltp * 0.98, 2),
+                ask=round(s.put_ltp * 1.02, 2),
             )
-            puts.append(
-                OptionData(
-                    strike=strike,
-                    oi=random.randint(10000, 500000),
-                    change_oi=random.randint(-50000, 100000),
-                    volume=random.randint(1000, 100000),
-                    iv=round(iv + random.uniform(-2, 2), 2),
-                    ltp=round(
-                        max(
-                            0.05,
-                            (strike - spot_price + random.uniform(-50, 50))
-                            * random.uniform(0.01, 0.05),
-                        ),
-                        2,
-                    ),
-                    bid=round(random.uniform(0.5, 5), 2),
-                    ask=round(random.uniform(0.5, 5), 2),
-                )
-            )
-
-        total_call_oi = sum(c.oi for c in calls)
-        total_put_oi = sum(p.oi for p in puts)
-        pcr = total_put_oi / total_call_oi if total_call_oi > 0 else 1.0
-        max_pain = spot_price + random.randint(-200, 200)
-        logger.warning("option_chain_using_synthetic_fallback", symbol=symbol)
+        )
 
     return OptionChain(
         symbol=symbol.upper(),
         expiry=expiry,
         spot_price=spot_price,
         timestamp=datetime.utcnow(),
-        underlying_change=round(random.uniform(-0.5, 0.5), 2),
+        underlying_change=0.0,
         calls=calls,
         puts=puts,
         pcr=round(pcr, 2),
@@ -193,47 +149,49 @@ async def get_option_analysis(
 
 @router.get("/pcr/{symbol}", response_model=PCRAnalysis)
 async def get_pcr_analysis(symbol: str, expiry: Optional[str] = None):
-    """Get PCR analysis with historical trend"""
+    """Get PCR analysis with historical trend.
+
+    Returns real PCR only. Without a live option feed there is no historical
+    PCR series to trend, so the endpoint returns 503 instead of inventing one.
+    """
     logger.info("fetching_pcr_analysis", symbol=symbol)
 
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    current_pcr = analysis.pcr if analysis else round(random.uniform(0.8, 1.2), 2)
-    historical_values = [round(random.uniform(0.7, 1.3), 2) for _ in range(20)]
-    trend = "rising" if current_pcr > historical_values[-5] else "falling"
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"PCR analysis unavailable for {symbol}.")
+
+    current_pcr = analysis.pcr
+    # A single live snapshot: no fabricated history. trend is "stable" until a
+    # real previous snapshot is available (future enhancement).
     interpretation = (
-        "bullish"
-        if current_pcr > 1.1
-        else "bearish" if current_pcr < 0.8 else "neutral"
+        "bullish" if current_pcr > 1.1 else "bearish" if current_pcr < 0.8 else "neutral"
     )
 
     return PCRAnalysis(
-        value=current_pcr,
+        value=round(current_pcr, 2),
         interpretation=interpretation,
-        trend=trend,
-        historical_values=historical_values + [current_pcr],
+        trend="stable",
+        historical_values=[round(current_pcr, 2)],
     )
 
 
 @router.get("/oi-analysis/{symbol}", response_model=OIAnalysis)
 async def get_oi_analysis(symbol: str, expiry: Optional[str] = None):
-    """Get OI buildup analysis"""
+    """Get OI buildup analysis (real option-chain OI only)."""
     logger.info("fetching_oi_analysis", symbol=symbol)
 
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    if analysis:
-        change_call_oi = sum(s.call_change_oi for s in analysis.strikes)
-        change_put_oi = sum(s.put_change_oi for s in analysis.strikes)
-        call_oi = analysis.total_call_oi
-        put_oi = analysis.total_put_oi
-    else:
-        change_call_oi = random.randint(-50000, 100000)
-        change_put_oi = random.randint(-50000, 100000)
-        call_oi = random.randint(1000000, 5000000)
-        put_oi = random.randint(1000000, 5000000)
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"OI analysis unavailable for {symbol}.")
+
+    change_call_oi = sum(s.call_change_oi for s in analysis.strikes)
+    change_put_oi = sum(s.put_change_oi for s in analysis.strikes)
+    call_oi = analysis.total_call_oi
+    put_oi = analysis.total_put_oi
 
     if change_call_oi > 0 and change_put_oi > 0:
         analysis_type = "buildup"
@@ -263,80 +221,85 @@ async def get_oi_analysis(symbol: str, expiry: Optional[str] = None):
 
 @router.get("/max-pain/{symbol}", response_model=MaxPainAnalysis)
 async def get_max_pain(symbol: str, expiry: Optional[str] = None):
-    """Get max pain calculation"""
+    """Get max pain calculation (real option-chain OI only)."""
     logger.info("fetching_max_pain", symbol=symbol)
 
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    spot_price = (
-        analysis.spot_price
-        if analysis
-        else (24500 if symbol.upper() in ["NIFTY", "NIFTY 50"] else 52400)
-    )
-    max_pain = analysis.max_pain if analysis else spot_price + random.randint(-200, 200)
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"Max pain analysis unavailable for {symbol}.")
+
+    spot_price = analysis.spot_price
+    max_pain = analysis.max_pain
+
+    # Real per-strike pain points computed from live OI.
+    call_pain = {
+        str(int(s.strike)): int(
+            sum(max(0, s.strike - o.strike) * o.call_oi for o in analysis.strikes)
+        )
+        for s in analysis.strikes
+    }
+    put_pain = {
+        str(int(s.strike)): int(
+            sum(max(0, o.strike - s.strike) * o.put_oi for o in analysis.strikes)
+        )
+        for s in analysis.strikes
+    }
 
     return MaxPainAnalysis(
         max_pain=max_pain,
         distance_from_spot=round(max_pain - spot_price, 2),
-        call_pain_points={
-            str(int(spot_price + i * 100)): random.randint(1000, 100000)
-            for i in range(-5, 6)
-        },
-        put_pain_points={
-            str(int(spot_price + i * 100)): random.randint(1000, 100000)
-            for i in range(-5, 6)
-        },
+        call_pain_points=call_pain,
+        put_pain_points=put_pain,
     )
 
 
 @router.get("/signals/{symbol}", response_model=List[OptionSignal])
 async def get_option_signals(symbol: str, expiry: Optional[str] = None):
-    """Get option trading signals"""
+    """Get option trading signals (derived from real option-chain analysis)."""
     logger.info("fetching_option_signals", symbol=symbol)
 
-    signals = []
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    spot_price = (
-        analysis.spot_price
-        if analysis
-        else (24500 if symbol.upper() in ["NIFTY", "NIFTY 50"] else 52400)
-    )
-    pcr = analysis.pcr if analysis else random.uniform(0.8, 1.3)
-    max_pain = analysis.max_pain if analysis else spot_price + random.randint(-200, 200)
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"Option signals unavailable for {symbol}.")
 
-    # ATM signal
+    spot_price = analysis.spot_price
+    pcr = analysis.pcr
+    max_pain = analysis.max_pain
+    signals: List[OptionSignal] = []
+
+    # ATM signal — confidence derived from the analyzer's trend confidence.
+    atm_strike = round(spot_price / 100) * 100
     signals.append(
         OptionSignal(
             type="atm_activity",
-            strike=round(spot_price / 100) * 100,
+            strike=atm_strike,
             side=OptionType.CALL,
-            confidence=random.uniform(60, 80),
+            confidence=round(min(80.0, 50.0 + analysis.confidence / 3), 1),
             interpretation="High ATM call activity suggests bullish bias",
         )
     )
 
-    # PCR signal
     if pcr > 1.1:
         signals.append(
             OptionSignal(
                 type="pcr_extreme",
                 strike=spot_price,
                 side=OptionType.PUT,
-                confidence=random.uniform(55, 75),
+                confidence=round(min(75.0, 50.0 + (pcr - 1.1) * 25), 1),
                 interpretation="Extremely high PCR suggests potential reversal",
             )
         )
 
-    # Max pain signal
     signals.append(
         OptionSignal(
             type="max_pain",
             strike=max_pain,
             side=OptionType.PUT,
-            confidence=random.uniform(50, 70),
+            confidence=round(min(70.0, 50.0 + analysis.confidence / 4), 1),
             interpretation=f"Max pain at {max_pain} - price may gravitate towards this level",
         )
     )

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from datetime import datetime
-import random
+import uuid
 import structlog
 
 from app.schemas.strategies import (
@@ -69,40 +69,44 @@ async def get_strategy(strategy_id: str):
 async def create_strategy(data: StrategyCreate, user_id: str = "user_1"):
     """Create a new strategy"""
     logger.info("creating_strategy", user_id=user_id)
-
+    now = datetime.utcnow()
     return Strategy(
-        id=f"strat_{random.randint(100, 999)}",
+        id=f"strat_{uuid.uuid4().hex[:8]}",
         user_id=user_id,
         name=data.name,
         type=data.type,
         description=data.description,
         parameters=data.parameters or {},
         is_active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now,
+        updated_at=now,
     )
 
 
 @router.post("/{strategy_id}/backtest", response_model=BacktestResult)
 async def backtest_strategy(strategy_id: str, params: BacktestParams):
-    """Run backtest on a strategy"""
-    logger.info("running_backtest", strategy_id=strategy_id)
+    """Run backtest on a strategy.
 
+    No backtest engine / historical data source is wired, so fabricating
+    performance metrics (returns, win rate, sharpe, etc.) would mislead. Return
+    a truthful empty/unavailable result instead of random numbers.
+    """
+    logger.info("running_backtest", strategy_id=strategy_id)
     return BacktestResult(
         strategy_id=strategy_id,
         period={"start_date": params.start_date, "end_date": params.end_date},
         metrics={
-            "total_return": round(random.uniform(5, 30), 2),
-            "annualized_return": round(random.uniform(10, 40), 2),
-            "win_rate": round(random.uniform(40, 70), 2),
-            "profit_factor": round(random.uniform(1.2, 2.5), 2),
-            "sharpe_ratio": round(random.uniform(0.5, 2.5), 2),
-            "sortino_ratio": round(random.uniform(0.8, 3.0), 2),
-            "max_drawdown": round(random.uniform(5, 15), 2),
-            "max_drawdown_duration": random.randint(5, 30),
-            "total_trades": random.randint(50, 200),
-            "avg_trade_duration": random.randint(1, 24),
-            "recovery_factor": round(random.uniform(1.5, 4.0), 2),
+            "total_return": 0.0,
+            "annualized_return": 0.0,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "max_drawdown_duration": 0,
+            "total_trades": 0,
+            "avg_trade_duration": 0,
+            "recovery_factor": 0.0,
         },
         equity_curve=[],
         trades=[],

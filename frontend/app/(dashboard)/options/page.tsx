@@ -1,127 +1,69 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { optionsApi } from '@/lib/api';
 
-interface OptionContract {
-  id: string;
-  symbol: string;
-  expiry: string;
+interface OptionLeg {
   strike: number;
-  type: 'CE' | 'PE';
-  ltp: number;
-  change: number;
-  volume: number;
   oi: number;
+  change_oi: number;
+  volume: number;
   iv: number;
-  delta: number;
+  ltp: number;
   bid: number;
   ask: number;
 }
 
-const SYMBOLS = [
-  { value: 'NIFTY', label: 'NIFTY 50', basePrice: 24500 },
-  { value: 'BANKNIFTY', label: 'BANKNIFTY', basePrice: 52400 },
-  { value: 'FINNIFTY', label: 'FINNIFTY', basePrice: 23400 },
-];
-
-function generateMockOptions(symbol: string, spotPrice: number): OptionContract[] {
-  const contracts: OptionContract[] = [];
-  const expiry = new Date();
-  expiry.setDate(expiry.getDate() + (7 - expiry.getDay()) % 7 + (expiry.getDay() === 0 ? 1 : 0)); // Next Thursday
-  const expiryStr = expiry.toISOString().split('T')[0];
-  
-  const strikes = [-300, -200, -100, -50, 0, 50, 100, 200, 300];
-  
-  strikes.forEach((offset, i) => {
-    const strike = Math.round((spotPrice + offset) / 50) * 50;
-    const isITM = (offset < 0 && i % 2 === 0) || (offset > 0 && i % 2 === 1);
-    
-    // CE prices
-    const ceLtp = Math.max(0.5, Math.abs(spotPrice - strike) + (isITM ? -10 : 10) + Math.random() * 50);
-    contracts.push({
-      id: `${symbol}-CE-${strike}`,
-      symbol,
-      expiry: expiryStr,
-      strike,
-      type: 'CE',
-      ltp: Math.round(ceLtp * 100) / 100,
-      change: (Math.random() - 0.45) * 10,
-      volume: Math.floor(Math.random() * 500000) + 100000,
-      oi: Math.floor(Math.random() * 5000000) + 500000,
-      iv: 15 + Math.random() * 10,
-      delta: offset < 0 ? 0.7 + Math.random() * 0.25 : 0.15 + Math.random() * 0.25,
-      bid: Math.round((ceLtp - 2) * 100) / 100,
-      ask: Math.round((ceLtp + 2) * 100) / 100,
-    });
-    
-    // PE prices
-    const peLtp = Math.max(0.5, Math.abs(spotPrice - strike) + (isITM ? -10 : 10) + Math.random() * 50);
-    contracts.push({
-      id: `${symbol}-PE-${strike}`,
-      symbol,
-      expiry: expiryStr,
-      strike,
-      type: 'PE',
-      ltp: Math.round(peLtp * 100) / 100,
-      change: (Math.random() - 0.55) * 10,
-      volume: Math.floor(Math.random() * 500000) + 100000,
-      oi: Math.floor(Math.random() * 5000000) + 500000,
-      iv: 15 + Math.random() * 10,
-      delta: offset < 0 ? -0.7 - Math.random() * 0.25 : -0.15 - Math.random() * 0.25,
-      bid: Math.round((peLtp - 2) * 100) / 100,
-      ask: Math.round((peLtp + 2) * 100) / 100,
-    });
-  });
-  
-  return contracts.sort((a, b) => a.strike - b.strike);
+interface OptionChainResponse {
+  symbol: string;
+  expiry: string;
+  spot_price: number;
+  timestamp: string;
+  calls: OptionLeg[];
+  puts: OptionLeg[];
 }
+
+const SYMBOLS = [
+  { value: 'NIFTY', label: 'NIFTY 50' },
+  { value: 'BANKNIFTY', label: 'BANKNIFTY' },
+  { value: 'FINNIFTY', label: 'FINNIFTY' },
+];
 
 export default function OptionsPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
-  const [options, setOptions] = useState<OptionContract[]>([]);
+  const [chain, setChain] = useState<OptionChainResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('all');
-  const [spotPrice, setSpotPrice] = useState(24500);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async (symbol: string) => {
+    setLoading(true);
+    setError(null);
+    const res = await optionsApi.getChain(symbol);
+    if (res.error || !res.data) {
+      setError(res.error ?? 'Option chain unavailable');
+      setChain(null);
+    } else {
+      setChain(res.data as OptionChainResponse);
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
-    if (symbolConfig) {
-      setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
-      setLoading(true);
-      // Simulate API fetch
-      setTimeout(() => {
-        setOptions(generateMockOptions(selectedSymbol, symbolConfig.basePrice));
-        setLoading(false);
-      }, 500);
-    }
-  }, [selectedSymbol]);
+    fetchData(selectedSymbol);
+  }, [selectedSymbol, fetchData]);
 
-  const refreshData = () => {
-    const symbolConfig = SYMBOLS.find(s => s.value === selectedSymbol);
-    if (symbolConfig) {
-      setLoading(true);
-      setTimeout(() => {
-        setSpotPrice(symbolConfig.basePrice + (Math.random() - 0.5) * 200);
-        setOptions(generateMockOptions(selectedSymbol, symbolConfig.basePrice));
-        setLoading(false);
-      }, 500);
-    }
-  };
+  const refreshData = () => fetchData(selectedSymbol);
 
-  const filteredOptions = options.filter((opt) => {
-    if (filter !== 'all' && opt.type !== filter) return false;
-    return true;
-  });
-
-  const callContracts = filteredOptions.filter(o => o.type === 'CE');
-  const putContracts = filteredOptions.filter(o => o.type === 'PE');
-  const totalCallOI = callContracts.reduce((acc, o) => acc + o.oi, 0);
-  const totalPutOI = putContracts.reduce((acc, o) => acc + o.oi, 0);
-  const pcr = totalPutOI / totalCallOI;
+  const calls = chain?.calls ?? [];
+  const puts = chain?.puts ?? [];
+  const totalCallOI = calls.reduce((acc, o) => acc + (o.oi || 0), 0);
+  const totalPutOI = puts.reduce((acc, o) => acc + (o.oi || 0), 0);
+  const pcr = totalCallOI > 0 ? totalPutOI / totalCallOI : 0;
+  const spotPrice = chain?.spot_price ?? 0;
 
   const formatNumber = (num: number) => {
     if (num >= 10000000) return `${(num / 10000000).toFixed(2)} Cr`;
@@ -129,9 +71,13 @@ export default function OptionsPage() {
     return new Intl.NumberFormat('en-IN').format(num);
   };
 
-  const formatINR = (num: number) => {
-    return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
-  };
+  const formatINR = (num: number) =>
+    new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+
+  // Merge calls + puts by strike for a single chain table.
+  const strikes = Array.from(
+    new Set([...calls.map((c) => c.strike), ...puts.map((p) => p.strike)])
+  ).sort((a, b) => a - b);
 
   return (
     <div className="space-y-6">
@@ -145,7 +91,6 @@ export default function OptionsPage() {
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button size="sm">+ New Strategy</Button>
         </div>
       </div>
 
@@ -167,55 +112,36 @@ export default function OptionsPage() {
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Spot Price</p>
-            <p className="text-2xl font-bold">₹{formatINR(spotPrice)}</p>
+            <p className="text-2xl font-bold">{spotPrice ? `₹${formatINR(spotPrice)}` : 'N/A'}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">PCR</p>
             <p className={`text-2xl font-bold ${pcr > 1 ? 'text-green-600' : 'text-red-600'}`}>
-              {pcr.toFixed(2)}
+              {totalCallOI > 0 ? pcr.toFixed(2) : 'N/A'}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Total Call OI</p>
-            <p className="text-2xl font-bold text-red-600">{formatNumber(totalCallOI)}</p>
+            <p className="text-2xl font-bold text-red-600">{totalCallOI ? formatNumber(totalCallOI) : 'N/A'}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Total Put OI</p>
-            <p className="text-2xl font-bold text-green-600">{formatNumber(totalPutOI)}</p>
+            <p className="text-2xl font-bold text-green-600">{totalPutOI ? formatNumber(totalPutOI) : 'N/A'}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filter */}
-      <div className="flex gap-4">
-        <Button
-          variant={filter === 'all' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilter('all')}
-        >
-          All ({filteredOptions.length})
-        </Button>
-        <Button
-          variant={filter === 'CE' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilter('CE')}
-        >
-          Calls ({callContracts.length})
-        </Button>
-        <Button
-          variant={filter === 'PE' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setFilter('PE')}
-        >
-          Puts ({putContracts.length})
-        </Button>
-      </div>
+      {chain && (
+        <p className="text-xs text-muted-foreground">
+          Expiry: {chain.expiry} • Updated: {new Date(chain.timestamp).toLocaleString('en-IN')}
+        </p>
+      )}
 
       {/* Options Table */}
       <Card>
@@ -227,47 +153,46 @@ export default function OptionsPage() {
             <div className="flex justify-center py-8">
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-3">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-muted-foreground">{error}</p>
+              <Button variant="outline" onClick={refreshData}>Retry</Button>
+            </div>
+          ) : strikes.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">No option chain data available</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-2 px-2">Strike</th>
-                    <th className="text-right py-2 px-2">OI</th>
-                    <th className="text-right py-2 px-2">Chg %</th>
-                    <th className="text-right py-2 px-2">Volume</th>
-                    <th className="text-right py-2 px-2">IV</th>
-                    <th className="text-right py-2 px-2">Delta</th>
-                    <th className="text-right py-2 px-2">Bid</th>
-                    <th className="text-center py-2 px-2">LTP</th>
-                    <th className="text-left py-2 px-2">Ask</th>
+                    <th className="text-right py-2 px-2">Call OI</th>
+                    <th className="text-right py-2 px-2">Call LTP</th>
+                    <th className="text-center py-2 px-2">Strike</th>
+                    <th className="text-right py-2 px-2">Put LTP</th>
+                    <th className="text-right py-2 px-2">Put OI</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOptions.map((opt) => (
-                    <tr key={opt.id} className="border-b hover:bg-muted/50">
-                      <td className="py-2 px-2">
-                        <Badge variant={opt.type === 'CE' ? 'outline' : 'secondary'} className="font-mono">
-                          ₹{opt.strike.toLocaleString('en-IN')}
-                        </Badge>
-                      </td>
-                      <td className="text-right py-2 px-2">{formatNumber(opt.oi)}</td>
-                      <td className={`text-right py-2 px-2 ${opt.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {opt.change >= 0 ? <TrendingUp className="inline h-3 w-3 mr-1" /> : <TrendingDown className="inline h-3 w-3 mr-1" />}
-                        {opt.change >= 0 ? '+' : ''}{opt.change.toFixed(1)}%
-                      </td>
-                      <td className="text-right py-2 px-2">{formatNumber(opt.volume)}</td>
-                      <td className="text-right py-2 px-2">{opt.iv.toFixed(1)}%</td>
-                      <td className={`text-right py-2 px-2 ${opt.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {opt.delta.toFixed(2)}
-                      </td>
-                      <td className="text-right py-2 px-2 text-muted-foreground">₹{opt.bid.toFixed(2)}</td>
-                      <td className={`text-center py-2 px-2 font-semibold ${opt.type === 'CE' ? 'text-green-600' : 'text-red-600'}`}>
-                        ₹{opt.ltp.toFixed(2)}
-                      </td>
-                      <td className="text-left py-2 px-2 text-muted-foreground">₹{opt.ask.toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {strikes.map((strike) => {
+                    const call = calls.find((c) => c.strike === strike);
+                    const put = puts.find((p) => p.strike === strike);
+                    return (
+                      <tr key={strike} className="border-b hover:bg-muted/50">
+                        <td className="text-right py-2 px-2 text-muted-foreground">{call ? formatNumber(call.oi) : '—'}</td>
+                        <td className={`text-right py-2 px-2 ${call ? 'text-green-600 font-semibold' : 'text-muted-foreground'}`}>
+                          {call ? `₹${call.ltp.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="text-center py-2 px-2">
+                          <Badge variant="outline" className="font-mono">₹{strike.toLocaleString('en-IN')}</Badge>
+                        </td>
+                        <td className={`text-right py-2 px-2 ${put ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+                          {put ? `₹${put.ltp.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="text-right py-2 px-2 text-muted-foreground">{put ? formatNumber(put.oi) : '—'}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

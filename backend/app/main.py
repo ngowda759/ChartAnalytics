@@ -39,13 +39,20 @@ async def lifespan(app: FastAPI):
     """Application lifespan events"""
     logger.info("application_startup", environment=settings.ENVIRONMENT)
 
-    # Initialize services
-    # await initialize_services()
+    # Log which market-data provider is active so it is never a silent default.
+    # The provider is chosen lazily in get_market_service(); resolve it here once
+    # so the startup log clearly states the production data source.
+    from app.services.market_service import get_market_service
+    try:
+        service = get_market_service()
+        provider_name = getattr(service.provider, "name", type(service.provider).__name__)
+        logger.info("MARKET DATA PROVIDER = %s", provider_name)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("market_provider_resolve_failed", error=str(exc))
 
     yield
 
     logger.info("application_shutdown")
-    # await cleanup_services()
 
 
 app = FastAPI(
