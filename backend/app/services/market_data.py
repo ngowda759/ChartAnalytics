@@ -121,6 +121,87 @@ def provider_display_name() -> str:
     return p.upper()
 
 
+# --- capability-based routing ---------------------------------------------
+# Equity/index OHLCV stays on the (verified, credential-free) yfinance pipeline
+# unless a broker is explicitly the primary provider. Realtime quotes, options
+# and OI — which yfinance cannot supply for Indian markets — route to Angel
+# One / Kite when those brokers are configured. This keeps the app fully
+# functional without broker credentials while adding realtime/options/OI the
+# moment credentials are present. yfinance is NEVER replaced globally.
+
+# Providers capable of realtime ticks (WebSocket) when configured.
+_REALTIME_PROVIDERS = (SOURCE_ANGEL_ONE, SOURCE_KITE)
+# Providers capable of Indian option chain / OI when configured.
+_OPTIONS_PROVIDERS = (SOURCE_ANGEL_ONE, SOURCE_KITE)
+
+
+def angel_one_configured() -> bool:
+    """True when Angel One credentials are present (no secrets exposed)."""
+    return bool(
+        settings.ANGEL_ONE_ENABLED
+        and settings.ANGEL_ONE_API_KEY
+        and settings.ANGEL_ONE_CLIENT_CODE
+    )
+
+
+def kite_configured() -> bool:
+    """True when Kite Connect credentials are present (no secrets exposed)."""
+    return bool(
+        settings.KITE_CONNECT_ENABLED
+        and settings.KITE_CONNECT_API_KEY
+        and settings.KITE_CONNECT_ACCESS_TOKEN
+    )
+
+
+def get_realtime_provider() -> Optional[str]:
+    """Resolve the provider used for realtime quotes (Angel One/Kite if set).
+
+    Returns ``None`` when no realtime-capable broker is configured — callers
+    then fall back to the yfinance quote snapshot (which is real, just not
+    streaming) rather than fabricating a realtime feed.
+    """
+    primary = get_market_data_provider()
+    if primary in _REALTIME_PROVIDERS and _broker_configured(primary):
+        return primary
+    if angel_one_configured():
+        return SOURCE_ANGEL_ONE
+    if kite_configured():
+        return SOURCE_KITE
+    return None
+
+
+def get_options_provider() -> Optional[str]:
+    """Resolve the provider used for options/OI (Angel One/Kite if set).
+
+    Returns ``None`` when no derivatives-capable broker is configured — the
+    options/OI endpoints then truthfully report unavailable (never fabricate).
+    """
+    primary = get_market_data_provider()
+    if primary in _OPTIONS_PROVIDERS and _broker_configured(primary):
+        return primary
+    if angel_one_configured():
+        return SOURCE_ANGEL_ONE
+    if kite_configured():
+        return SOURCE_KITE
+    return None
+
+
+def realtime_candles(symbol: str, interval: str, limit: int = 100):
+    """Return candles from a live WebSocket stream when one is active, else None."""
+    rt = get_realtime_provider()
+    if rt != SOURCE_ANGEL_ONE:
+        return None
+    try:
+        provider_obj = _build_broker(SOURCE_ANGEL_ONE)
+    except Exception as exc:
+        _last_error["realtime"] = f"angel_one init failed: {exc}"
+        return None
+    if provider_obj is None:
+        return None
+    candles = provider_obj.realtime_candles(symbol, interval, limit)
+    return candles or None
+
+
 # --- candles cache ----------------------------------------------------------
 
 _CANDLE_CACHE: TTLCache = TTLCache(ttl=120)

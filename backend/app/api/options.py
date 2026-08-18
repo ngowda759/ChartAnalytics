@@ -37,7 +37,8 @@ async def get_option_chain(
 
     Only real option-chain data is returned. When no live provider is
     configured (or the market is closed) the endpoint returns 503 with a
-    clear message instead of fabricated strikes/OI/IV.
+    clear message instead of fabricated strikes/OI/IV. The ``source`` /
+    ``status`` fields trace the data back to its real provider.
     """
     logger.info("fetching_option_chain", symbol=symbol, expiry=expiry)
 
@@ -55,6 +56,10 @@ async def get_option_chain(
     max_pain = analysis.max_pain
     total_call_oi = analysis.total_call_oi
     total_put_oi = analysis.total_put_oi
+
+    # Propagate the real provider source/status (default unavailable).
+    src = getattr(analysis, "source", "unavailable") or "unavailable"
+    chain_ts = getattr(analysis, "timestamp", None) or datetime.utcnow()
 
     calls = []
     puts = []
@@ -88,7 +93,7 @@ async def get_option_chain(
         symbol=symbol.upper(),
         expiry=expiry,
         spot_price=spot_price,
-        timestamp=datetime.utcnow(),
+        timestamp=chain_ts,
         underlying_change=0.0,
         calls=calls,
         puts=puts,
@@ -96,6 +101,8 @@ async def get_option_chain(
         max_pain=max_pain,
         total_call_oi=total_call_oi,
         total_put_oi=total_put_oi,
+        source=src,
+        status="live",
     )
 
 
@@ -143,7 +150,9 @@ async def get_option_analysis(
         },
         "support_levels": analysis.support_levels,
         "resistance_levels": analysis.resistance_levels,
-        "source": "live",
+        "source": getattr(analysis, "source", "unavailable") or "unavailable",
+        "status": getattr(analysis, "status", "unavailable") or "unavailable",
+        "timestamp": getattr(analysis, "timestamp", None),
     }
 
 
@@ -169,11 +178,16 @@ async def get_pcr_analysis(symbol: str, expiry: Optional[str] = None):
         "bullish" if current_pcr > 1.1 else "bearish" if current_pcr < 0.8 else "neutral"
     )
 
+    src = getattr(analysis, "source", "unavailable") or "unavailable"
+    chain_ts = getattr(analysis, "timestamp", None)
+
     return PCRAnalysis(
         value=round(current_pcr, 2),
         interpretation=interpretation,
         trend="stable",
         historical_values=[round(current_pcr, 2)],
+        source=src,
+        timestamp=chain_ts,
     )
 
 
@@ -209,6 +223,9 @@ async def get_oi_analysis(symbol: str, expiry: Optional[str] = None):
         "long_unwinding": "Put OI up, Call OI down - suggests long liquidation",
     }[analysis_type]
 
+    src = getattr(analysis, "source", "unavailable") or "unavailable"
+    chain_ts = getattr(analysis, "timestamp", None)
+
     return OIAnalysis(
         type=analysis_type,
         call_oi=call_oi,
@@ -216,6 +233,8 @@ async def get_oi_analysis(symbol: str, expiry: Optional[str] = None):
         change_call_oi=change_call_oi,
         change_put_oi=change_put_oi,
         interpretation=interpretation,
+        source=src,
+        timestamp=chain_ts,
     )
 
 
@@ -252,6 +271,7 @@ async def get_max_pain(symbol: str, expiry: Optional[str] = None):
         distance_from_spot=round(max_pain - spot_price, 2),
         call_pain_points=call_pain,
         put_pain_points=put_pain,
+        source=getattr(analysis, "source", "unavailable") or "unavailable",
     )
 
 

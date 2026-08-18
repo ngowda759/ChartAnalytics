@@ -1,7 +1,6 @@
-from fastapi import APIRouter, UploadFile, File, Query
+from fastapi import APIRouter, UploadFile, File, Query, HTTPException
 from typing import List, Optional
 from datetime import datetime
-import random
 import structlog
 
 from app.schemas.ai import (
@@ -17,29 +16,60 @@ logger = structlog.get_logger()
 router = APIRouter()
 
 
+def _bias_from_change(change_percent: float):
+    """Deterministic bias from a real price change.
+
+    No random trend: bias is derived from the actual quote movement so the
+    same market snapshot always yields the same insight.
+    """
+    if change_percent > 0.5:
+        return "bullish"
+    if change_percent < -0.5:
+        return "bearish"
+    return "neutral"
+
+
+def _confidence_from_change(change_percent: float) -> float:
+    """Map the magnitude of a real move to a bounded confidence (50-80)."""
+    return round(min(80.0, 50.0 + abs(change_percent) * 3.0), 1)
+
+
 @router.get("/insights/{symbol}", response_model=AIInsight)
 async def get_market_insight(symbol: str):
-    """Get AI-powered market insight"""
+    """Get a market insight derived from the real quote (no random values)."""
     logger.info("generating_market_insight", symbol=symbol)
 
-    trends = ["bullish", "bearish", "neutral"]
-    trend = random.choice(trends)
+    from app.services.market_service import get_market_service
+
+    service = get_market_service()
+    quote = await service.get_quote(symbol)
 
     descriptions = {
-        "bullish": "The index shows strong buying interest with momentum indicators supporting higher levels. Watch for continuation above key resistance.",
-        "bearish": "Selling pressure persists with technical indicators suggesting further downside. Maintain caution and respect support levels.",
+        "bullish": "The index shows buying interest with momentum indicators supporting higher levels. Watch for continuation above key resistance.",
+        "bearish": "Selling pressure persists with technical indicators suggesting caution. Maintain risk discipline and respect support levels.",
         "neutral": "Market consolidating in a range with no clear directional bias. Consider waiting for a breakout before positioning.",
     }
 
+    if quote is None:
+        # Truthful unavailable — never fabricate a price/trend.
+        raise HTTPException(
+            status_code=404,
+            detail=f"Live quote unavailable for {symbol}; cannot generate insight.",
+        )
+
+    bias = _bias_from_change(quote.change_percent)
     return AIInsight(
-        id=f"insight_{symbol}_{datetime.utcnow().timestamp()}",
+        id=f"insight_{symbol}_{int(datetime.utcnow().timestamp())}",
         symbol=symbol,
         type="trend",
-        title=f"{symbol} - {trend.title()} Bias",
-        description=descriptions[trend],
-        confidence=round(random.uniform(60, 85), 1),
-        bias=trend,
-        reasoning="Based on multiple technical indicators including EMA crossovers, RSI momentum, and volume analysis.",
+        title=f"{symbol} - {bias.title()} Bias",
+        description=descriptions[bias],
+        confidence=_confidence_from_change(quote.change_percent),
+        bias=bias,
+        reasoning=(
+            f"Derived from the real {quote.source} quote: change "
+            f"{quote.change_percent}%."
+        ),
         indicators=["EMA 20/50", "RSI", "MACD", "VWAP"],
         timestamp=datetime.utcnow(),
     )
@@ -47,14 +77,18 @@ async def get_market_insight(symbol: str):
 
 @router.get("/insights", response_model=List[AIInsight])
 async def get_all_insights(limit: int = Query(10, ge=1, le=50)):
-    """Get latest AI insights"""
+    """Get latest AI insights for the configured symbol basket."""
     logger.info("fetching_insights", limit=limit)
 
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "HDFCBANK"]
     insights = []
 
     for symbol in symbols[:limit]:
-        insights.append(await get_market_insight(symbol))
+        try:
+            insights.append(await get_market_insight(symbol))
+        except HTTPException:
+            # Skip symbols without a live quote rather than failing the list.
+            continue
 
     return insights
 
@@ -64,54 +98,63 @@ async def analyze_chart(
     symbol: str = Query(...),
     image: UploadFile = File(...),
 ):
-    """Analyze uploaded chart image"""
+    """Analyze a chart for ``symbol`` using real price levels (no random).
+
+    Levels are derived deterministically from the real quote: entry at the
+    last price, stop/target at fixed percent offsets. Patterns/bias come from
+    the real price change. Returns 404 if no live quote is available — never a
+    fabricated price.
+    """
     logger.info("analyzing_chart", symbol=symbol)
 
-    patterns = [
-        {
-            "type": "Higher Low",
-            "confidence": round(random.uniform(65, 85), 1),
-            "description": "Forming higher lows suggesting bullish reversal",
-        },
-        {
-            "type": "Support Test",
-            "confidence": round(random.uniform(70, 90), 1),
-            "description": "Testing previous support level",
-        },
-        {
-            "type": "Range Bound",
-            "confidence": round(random.uniform(60, 80), 1),
-            "description": "Consolidating within a range",
-        },
-    ]
+    from app.services.market_service import get_market_service
 
-    spot_price = 24567.85
-    entry = spot_price * (1 + random.uniform(-0.005, 0.005))
-    stop_loss = entry * (1 - random.uniform(0.01, 0.02))
-    target = entry * (1 + random.uniform(0.02, 0.04))
+    service = get_market_service()
+    quote = await service.get_quote(symbol)
+    if quote is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Live quote unavailable for {symbol}; cannot analyze chart.",
+        )
+
+    entry = quote.price
+    stop_loss = round(entry * 0.98, 2)
+    target = round(entry * 1.03, 2)
+    bias = _bias_from_change(quote.change_percent)
+
+    # Deterministic pattern selection from the real move direction.
+    if bias == "bullish":
+        patterns = [{"type": "Higher Low", "confidence": 65.0,
+                     "description": "Forming higher lows suggesting bullish reversal"}]
+    elif bias == "bearish":
+        patterns = [{"type": "Lower High", "confidence": 65.0,
+                     "description": "Forming lower highs suggesting bearish continuation"}]
+    else:
+        patterns = [{"type": "Range Bound", "confidence": 60.0,
+                     "description": "Consolidating within a range"}]
 
     return ChartAnalysis(
-        id=f"chart_{datetime.utcnow().timestamp()}",
+        id=f"chart_{int(datetime.utcnow().timestamp())}",
         symbol=symbol,
-        patterns=[p for p in patterns if random.random() > 0.3],
+        patterns=patterns,
         levels={
-            "entry": round(entry, 2),
-            "stop_loss": round(stop_loss, 2),
-            "target_1": round(target, 2),
+            "entry": entry,
+            "stop_loss": stop_loss,
+            "target_1": target,
             "target_2": round(target * 1.5, 2),
             "target_3": round(target * 2, 2),
             "risk_reward": round((target - entry) / (entry - stop_loss), 2),
         },
-        bias=random.choice(["bullish", "bearish", "neutral"]),
-        confidence=round(random.uniform(55, 80), 1),
-        reasoning="Based on chart pattern analysis and key price levels.",
+        bias=bias,
+        confidence=_confidence_from_change(quote.change_percent),
+        reasoning=f"Based on the real {quote.source} price ({entry}) and key levels.",
         timestamp=datetime.utcnow(),
     )
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(message: ChatMessage):
-    """AI Chat Assistant"""
+    """AI Chat Assistant — deterministic, bias-driven response (no random)."""
     logger.info("chat_message", role=message.role)
 
     responses = {
@@ -120,11 +163,22 @@ async def chat(message: ChatMessage):
         "neutral": "The market is showing mixed signals with no clear directional bias. This might be a good time to stay on the sidelines or reduce position sizes until there's more clarity. Always trade with a plan and defined risk parameters.",
     }
 
+    # Pick the response from the real NIFTY move (deterministic), not random.
+    bias = "neutral"
+    try:
+        from app.services.market_service import get_market_service
+
+        q = await get_market_service().get_quote("NIFTY")
+        if q is not None:
+            bias = _bias_from_change(q.change_percent)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info("chat_bias_fallback_neutral", error=str(exc))
+
     return ChatResponse(
         message={
-            "id": f"msg_{datetime.utcnow().timestamp()}",
+            "id": f"msg_{int(datetime.utcnow().timestamp())}",
             "role": "assistant",
-            "content": random.choice(list(responses.values())),
+            "content": responses[bias],
             "timestamp": datetime.utcnow(),
         },
         sources=[

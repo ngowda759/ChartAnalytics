@@ -36,6 +36,8 @@ class OptionChain(BaseModel):
     max_pain: float
     total_call_oi: int
     total_put_oi: int
+    source: str = "unavailable"
+    status: str = "unavailable"
 
 
 class PCRAnalysis(BaseModel):
@@ -43,6 +45,8 @@ class PCRAnalysis(BaseModel):
     interpretation: str  # "bullish", "bearish", "neutral"
     trend: str  # "rising", "falling", "stable"
     historical_values: List[float]
+    source: str = "unavailable"
+    timestamp: Optional[datetime] = None
 
 
 class OIAnalysis(BaseModel):
@@ -52,6 +56,8 @@ class OIAnalysis(BaseModel):
     change_call_oi: int
     change_put_oi: int
     interpretation: str
+    source: str = "unavailable"
+    timestamp: Optional[datetime] = None
 
 
 class MaxPainAnalysis(BaseModel):
@@ -59,6 +65,7 @@ class MaxPainAnalysis(BaseModel):
     distance_from_spot: float
     call_pain_points: Dict[str, int]
     put_pain_points: Dict[str, int]
+    source: str = "unavailable"
 
 
 class OptionSignal(BaseModel):

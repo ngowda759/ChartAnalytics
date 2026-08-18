@@ -239,15 +239,28 @@ class MarketDataService:
         symbol: str,
         expiry: Optional[str] = None,
     ) -> Optional[OptionChainAnalysis]:
-        """Analyze option chain data."""
+        """Analyze option chain data (real option-chain OI only).
+
+        Prefers a configured derivatives provider (Angel One/Kite) via the
+        unified market_data resolver so options/OI work even when yfinance is
+        the primary OHLCV provider. Falls back to ``self.provider`` (which is
+        the same broker when it is primary). Never fabricates OI: a missing
+        chain returns ``None`` so callers surface 503/unavailable.
+        """
         try:
-            chain_data = await self.get_option_chain(symbol, expiry)
+            # Unified resolver respects capability routing (Angel One/Kite for
+            # options regardless of the primary OHLCV provider).
+            from app.services import market_data
+
+            chain_data = market_data.get_real_option_chain(symbol, expiry)
+            if chain_data is None:
+                chain_data = await self.provider.get_option_chain(symbol, expiry)
             if not chain_data:
                 return None
 
-            # Get spot price
+            # Get spot price from the same unified layer for consistency.
             quote = await self.get_quote(symbol)
-            spot_price = quote.price if quote else 25000
+            spot_price = quote.price if quote else 0.0
 
             # Get expiry date
             expiry_date = datetime.utcnow()

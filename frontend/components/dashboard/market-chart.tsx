@@ -216,10 +216,17 @@ async function loadChartData(symbol: string): Promise<{
   }
 
   if (!live) {
-    const mock = generateIntradayData(symbol);
-    candles = mock.candles;
-    volume = mock.volume;
-    return { ...mock, live: false };
+    // No fabricated candles: surface an empty/unavailable state instead of
+    // random synthetic OHLC. The chart will render with no data and the
+    // header shows the data is not live.
+    return {
+      candles: [],
+      volume: [],
+      currentPrice: liveQuote?.price ?? 0,
+      change: liveQuote?.change ?? 0,
+      changePercent: liveQuote?.change_percent ?? 0,
+      live: false,
+    };
   }
 
   const openPrice = candles[0].open;
@@ -247,65 +254,3 @@ async function loadChartData(symbol: string): Promise<{
   };
 }
 
-function getIntradayStartTime(): Date {
-  const now = new Date();
-  const marketOpen = new Date(now);
-  marketOpen.setUTCHours(3, 45, 0, 0);
-
-  const day = now.getDay();
-  if (day === 0) {
-    marketOpen.setDate(marketOpen.getDate() + 1);
-  } else if (day === 6) {
-    marketOpen.setDate(marketOpen.getDate() + 2);
-  }
-
-  return marketOpen;
-}
-
-function generateIntradayData(symbol: string) {
-  const candles: CandleData[] = [];
-  const volume: VolumeData[] = [];
-
-  const basePrice = symbol === 'NIFTY' ? 24500 : 52400;
-  const volatility = symbol === 'NIFTY' ? 50 : 100;
-
-  const marketOpen = getIntradayStartTime();
-  let currentPrice = basePrice;
-
-  const now = new Date();
-  const marketClose = new Date(marketOpen);
-  marketClose.setHours(15, 30, 0, 0);
-
-  const endTime = now > marketClose ? marketClose : now;
-
-  let candleTime = new Date(marketOpen);
-
-  while (candleTime <= endTime) {
-    const timestamp = Math.floor(candleTime.getTime() / 1000);
-
-    const change = (Math.random() - 0.5) * volatility;
-    const open = currentPrice;
-    const close = currentPrice + change;
-    const high = Math.max(open, close) + Math.random() * (volatility / 2);
-    const low = Math.min(open, close) - Math.random() * (volatility / 2);
-
-    candles.push({ time: timestamp, open, high, low, close });
-
-    volume.push({
-      time: timestamp,
-      value: Math.random() * 1000000 + 500000,
-      color: close >= open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
-    });
-
-    currentPrice = close;
-
-    candleTime = new Date(candleTime.getTime() + 5 * 60 * 1000);
-  }
-
-  const openPrice = candles.length > 0 ? candles[0].open : basePrice;
-  const lastClose = candles.length > 0 ? candles[candles.length - 1].close : basePrice;
-  const change = lastClose - openPrice;
-  const changePercent = (change / openPrice) * 100;
-
-  return { candles, volume, currentPrice: lastClose, change, changePercent };
-}

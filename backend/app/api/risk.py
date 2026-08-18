@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
 from datetime import datetime
-import random
 import structlog
 
 from app.schemas.risk import (
@@ -78,16 +77,22 @@ async def calculate_risk(
 
 @router.get("/daily-limit", response_model=DailyLimit)
 async def get_daily_limit(user_id: str = "user_1"):
-    """Get current daily loss limit status"""
+    """Get current daily loss limit status.
+
+    There is no live brokerage P&L feed wired by default, so the current loss
+    is truthfully reported as 0 (no realised loss tracked) rather than a
+    fabricated random number. When a broker P&L feed is connected this should
+    read the real day's realised loss.
+    """
     logger.info("fetching_daily_limit", user_id=user_id)
 
     max_loss = 5000
-    current_loss = random.uniform(0, max_loss * 0.8)
+    current_loss = 0.0
 
     return DailyLimit(
         date=datetime.utcnow(),
         max_loss=max_loss,
-        current_loss=round(current_loss, 2),
+        current_loss=current_loss,
         remaining_loss=round(max_loss - current_loss, 2),
         is_limit_hit=current_loss >= max_loss,
     )
