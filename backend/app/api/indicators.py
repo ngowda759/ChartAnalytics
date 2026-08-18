@@ -54,15 +54,31 @@ async def get_indicators(symbol: str):
     current_price = closes[-1]
 
     # EMA
+    ema9_list = calculate_ema(closes, 9)
     ema20_list = calculate_ema(closes, 20)
     ema50_list = calculate_ema(closes, 50)
+    ema100_list = calculate_ema(closes, 100)
     ema200_list = calculate_ema(closes, 200)
 
+    ema9 = ema9_list[-1] if ema9_list and ema9_list[-1] else current_price
     ema20 = ema20_list[-1] if ema20_list and ema20_list[-1] else current_price
     ema50 = ema50_list[-1] if ema50_list and ema50_list[-1] else current_price
+    ema100 = ema100_list[-1] if ema100_list and ema100_list[-1] else current_price
     ema200 = ema200_list[-1] if ema200_list and ema200_list[-1] else current_price
 
-    ema_trend = get_trend_direction(ema20, ema50, ema200, current_price)
+    ema_trend_raw = get_trend_direction(ema20, ema50, ema200, current_price)
+    # get_trend_direction returns fine-grained strings (strong_uptrend, uptrend,
+    # strong_downtrend, downtrend, ranging, unknown); map to the enum's
+    # bullish/bearish/neutral so EMAData.trend validates.
+    _TREND_MAP = {
+        "strong_uptrend": TrendDirection.BULLISH,
+        "uptrend": TrendDirection.BULLISH,
+        "strong_downtrend": TrendDirection.BEARISH,
+        "downtrend": TrendDirection.BEARISH,
+        "ranging": TrendDirection.NEUTRAL,
+        "unknown": TrendDirection.NEUTRAL,
+    }
+    ema_trend = _TREND_MAP.get(ema_trend_raw, TrendDirection.NEUTRAL)
 
     # RSI
     rsi_list = calculate_rsi(closes, 14)
@@ -95,72 +111,112 @@ async def get_indicators(symbol: str):
     atr_list = calculate_atr(highs, lows, closes, 14)
     atr_value = atr_list[-1] if atr_list and atr_list[-1] else 0
 
+    # MACD crossover derived from last two histogram values.
+    macd_crossover = "none"
+    if len(histogram) >= 2 and histogram[-1] is not None and histogram[-2] is not None:
+        if histogram[-1] > 0 and histogram[-2] <= 0:
+            macd_crossover = "bullish"
+        elif histogram[-1] < 0 and histogram[-2] >= 0:
+            macd_crossover = "bearish"
+
+    bb_obj = bb  # BollingerBands or None
+
+    supertrend_obj = st
+    st_direction = "up" if supertrend_obj and supertrend_obj.trend == "up" else "down"
+    st_breakout = bool(
+        supertrend_obj
+        and (
+            (st_direction == "up" and current_price > supertrend_obj.value)
+            or (st_direction == "down" and current_price < supertrend_obj.value)
+        )
+    )
+
+    adx_obj = adx
+    adx_value = adx_obj.adx if adx_obj else 0.0
+    adx_plus = adx_obj.plus_di if adx_obj else 0.0
+    adx_minus = adx_obj.minus_di if adx_obj else 0.0
+    adx_strength = adx_obj.trend_strength if adx_obj else "weak"
+
+    atr_pct = round(atr_value / current_price * 100, 2) if current_price > 0 else 0.0
+    atr_signal = "high" if atr_pct > 3 else ("medium" if atr_pct > 1.5 else "low")
+
+    vwap_signal = "above" if current_price > vwap else "below"
+    vwap_distance = (
+        round((current_price - vwap) / vwap * 100, 2) if vwap > 0 else 0.0
+    )
+
+    # Overall signal from EMA trend + RSI + MACD histogram.
+    signals = []
+    if ema_trend == TrendDirection.BULLISH:
+        signals.append(1)
+    elif ema_trend == TrendDirection.BEARISH:
+        signals.append(-1)
+    if rsi_value > 70:
+        signals.append(-1)
+    elif rsi_value < 30:
+        signals.append(1)
+    if histogram_value > 0:
+        signals.append(1)
+    elif histogram_value < 0:
+        signals.append(-1)
+    overall = (
+        "bullish" if sum(signals) > 0
+        else "bearish" if sum(signals) < 0 else "neutral"
+    )
+    confidence = round(min(abs(sum(signals)) / max(len(signals), 1) * 100, 100), 2)
+
     return TechnicalIndicators(
         symbol=symbol,
-        price=current_price,
+        timestamp=datetime.utcnow(),
+        price=round(current_price, 2),
         ema=EMAData(
+            ema_9=round(ema9, 2),
             ema_20=round(ema20, 2),
             ema_50=round(ema50, 2),
+            ema_100=round(ema100, 2),
             ema_200=round(ema200, 2),
-            trend=TrendDirection(ema_trend),
+            trend=ema_trend,
         ),
         rsi=RSIData(
             value=round(rsi_value, 2),
             signal=rsi_signal.signal,
-            overbought=rsi_value >= 70,
-            oversold=rsi_value <= 30,
         ),
         macd=MACDData(
             macd=round(macd_value, 4),
-            signal_line=round(signal_value, 4),
+            signal=round(signal_value, 4),
             histogram=round(histogram_value, 4),
-        ),
-        bollinger=(
-            BollingerBandsData(
-                upper=round(bb.upper, 2) if bb else current_price * 1.02,
-                middle=round(bb.middle, 2) if bb else current_price,
-                lower=round(bb.lower, 2) if bb else current_price * 0.98,
-                bandwidth=round(bb.bandwidth, 2) if bb else 4.0,
-                percent_b=round(bb.percent_b, 4) if bb else 0.5,
-            )
-            if bb
-            else BollingerBandsData(
-                upper=current_price * 1.02,
-                middle=current_price,
-                lower=current_price * 0.98,
-                bandwidth=4.0,
-                percent_b=0.5,
-            )
+            crossover=macd_crossover,
         ),
         vwap=VWAPData(
             value=round(vwap, 2),
-            position="above" if current_price > vwap else "below",
+            distance_from_vwap=vwap_distance,
+            signal=vwap_signal,
         ),
-        supertrend=(
-            SupertrendData(
-                value=round(st.value, 2) if st else current_price,
-                trend="up" if st and st.trend == "up" else "down",
-                reversal=st.reversal if st else False,
-            )
-            if st
-            else SupertrendData(value=current_price, trend="up", reversal=False)
+        supertrend=SupertrendData(
+            value=round(supertrend_obj.value, 2) if supertrend_obj else round(current_price, 2),
+            direction=st_direction,
+            is_breakout=st_breakout,
         ),
-        adx=(
-            ADXData(
-                adx=round(adx.adx, 2) if adx else 25,
-                plus_di=round(adx.plus_di, 2) if adx else 15,
-                minus_di=round(adx.minus_di, 2) if adx else 15,
-                trend_strength=adx.trend_strength if adx else "moderate",
-            )
-            if adx
-            else ADXData(adx=25, plus_di=15, minus_di=15, trend_strength="moderate")
+        bollinger_bands=BollingerBandsData(
+            upper=round(bb_obj.upper, 2) if bb_obj else round(current_price * 1.02, 2),
+            middle=round(bb_obj.middle, 2) if bb_obj else round(current_price, 2),
+            lower=round(bb_obj.lower, 2) if bb_obj else round(current_price * 0.98, 2),
+            bandwidth=round(bb_obj.bandwidth, 2) if bb_obj else 4.0,
+            position=round(bb_obj.percent_b * 100, 2) if bb_obj else 50.0,
         ),
         atr=ATRData(
             value=round(atr_value, 2),
-            normalized=(
-                round(atr_value / current_price * 100, 2) if current_price > 0 else 0
-            ),
+            percent=atr_pct,
+            signal=atr_signal,
         ),
+        adx=ADXData(
+            value=round(adx_value, 2),
+            trend_strength=adx_strength,
+            plus_di=round(adx_plus, 2),
+            minus_di=round(adx_minus, 2),
+        ),
+        overall_signal=overall,
+        confidence=confidence,
     )
 
 
