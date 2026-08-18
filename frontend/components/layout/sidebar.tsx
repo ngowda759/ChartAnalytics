@@ -52,6 +52,18 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // The IST clock differs between server render and client hydration (time
+  // advances ~1s), which triggers a React hydration mismatch warning. Render
+  // a stable placeholder until mounted so server and client HTML match.
+  const [clock, setClock] = useState<string | null>(null);
+
+  useEffect(() => {
+    const tick = () =>
+      setClock(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -132,7 +144,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 Market Hours
               </p>
               <p className="mt-1 text-lg font-bold">
-                {new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                {clock ?? '—'}
               </p>
               <p className="text-xs text-muted-foreground">IST (UTC+5:30)</p>
             </div>
@@ -210,7 +222,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
               Market Hours
             </p>
             <p className="mt-1 text-lg font-bold">
-              {new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}
+              {clock ?? '—'}
             </p>
             <p className="text-xs text-muted-foreground">IST (UTC+5:30)</p>
           </div>

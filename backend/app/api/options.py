@@ -117,15 +117,8 @@ async def get_option_analysis(
     service = get_market_service()
     analysis = await service.analyze_option_chain(symbol, expiry)
 
-    if not analysis:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Option analysis not available for {symbol}. Live option data is "
-                "currently unavailable (no real data provider configured or market "
-                "closed)."
-            ),
-        )
+    if not analysis or not analysis.strikes:
+        raise _unavailable(f"Option analysis unavailable for {symbol}.")
 
     return {
         "symbol": analysis.symbol,

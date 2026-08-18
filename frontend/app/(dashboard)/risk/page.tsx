@@ -1,22 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, TrendingUp, TrendingDown, Shield, Calculator } from 'lucide-react';
+import { AlertTriangle, Shield, Calculator, RefreshCw } from 'lucide-react';
+import { riskApi } from '@/lib/api';
 
 interface PositionSize {
   quantity: number;
-  riskAmount: number;
-  capitalRequired: number;
-  riskPercent: number;
+  risk_amount: number;
+  capital_required: number;
+  risk_percent: number;
 }
 
 interface DailyLimit {
-  maxLoss: number;
-  currentLoss: number;
-  remainingLoss: number;
-  isLimitHit: boolean;
+  date: string;
+  max_loss: number;
+  current_loss: number;
+  remaining_loss: number;
+  is_limit_hit: boolean;
 }
 
 export default function RiskPage() {
@@ -27,33 +29,48 @@ export default function RiskPage() {
   const [instrument, setInstrument] = useState('equity');
   const [positionSize, setPositionSize] = useState<PositionSize | null>(null);
   const [calculating, setCalculating] = useState(false);
-  
-  // Mock daily limit data
-  const [dailyLimit] = useState<DailyLimit>({
-    maxLoss: 5000,
-    currentLoss: 1500,
-    remainingLoss: 3500,
-    isLimitHit: false,
-  });
+  const [calcError, setCalcError] = useState<string | null>(null);
+
+  // Daily loss limit comes from the backend (/risk/daily-limit), which truthfully
+  // reports current_loss = 0 when no broker P&L feed is connected — never a
+  // fabricated number.
+  const [dailyLimit, setDailyLimit] = useState<DailyLimit | null>(null);
+  const [limitLoading, setLimitLoading] = useState(true);
+  const [limitError, setLimitError] = useState<string | null>(null);
+
+  const loadDailyLimit = useCallback(async () => {
+    setLimitLoading(true);
+    setLimitError(null);
+    const res = await riskApi.getDailyLimit();
+    if (res.error || !res.data) {
+      setLimitError(res.error ?? 'Daily limit unavailable');
+      setDailyLimit(null);
+    } else {
+      setDailyLimit(res.data as DailyLimit);
+    }
+    setLimitLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadDailyLimit();
+  }, [loadDailyLimit]);
 
   const calculatePosition = async () => {
     setCalculating(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const priceDiff = Math.abs(entryPrice - stopLoss);
-    const riskAmount = accountSize * (riskPercent / 100);
-    const quantity = Math.floor(riskAmount / priceDiff);
-    const capitalRequired = quantity * entryPrice;
-    
-    setPositionSize({
-      quantity,
-      riskAmount,
-      capitalRequired,
+    setCalcError(null);
+    const res = await riskApi.calculatePositionSize({
+      accountSize,
       riskPercent,
+      entryPrice,
+      stopLoss,
+      instrument,
     });
-    
+    if (res.error || !res.data) {
+      setCalcError(res.error ?? 'Could not compute position size');
+      setPositionSize(null);
+    } else {
+      setPositionSize(res.data as PositionSize);
+    }
     setCalculating(false);
   };
 
@@ -66,12 +83,8 @@ export default function RiskPage() {
     }).format(value);
   };
 
-  const formatINR = (value: number) => {
-    return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(value);
-  };
-
-  const priceDifference = Math.abs(entryPrice - stopLoss);
   const riskAmount = accountSize * (riskPercent / 100);
+  const priceDifference = Math.abs(entryPrice - stopLoss);
 
   return (
     <div className="space-y-6">
@@ -165,6 +178,10 @@ export default function RiskPage() {
               {calculating ? 'Calculating...' : 'Calculate Position Size'}
             </Button>
 
+            {calcError && (
+              <p className="mt-4 text-sm text-red-600">{calcError}</p>
+            )}
+
             {/* Results */}
             {positionSize && (
               <div className="mt-6 p-4 bg-muted rounded-lg border">
@@ -176,11 +193,11 @@ export default function RiskPage() {
                   </div>
                   <div className="text-center p-3 bg-red-500/10 rounded-lg">
                     <p className="text-xs text-muted-foreground mb-1">Risk Amount</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrency(positionSize.riskAmount)}</p>
+                    <p className="text-2xl font-bold text-red-600">{formatCurrency(positionSize.risk_amount)}</p>
                   </div>
                   <div className="text-center p-3 bg-background rounded-lg">
                     <p className="text-xs text-muted-foreground mb-1">Capital Required</p>
-                    <p className="text-xl font-bold">{formatCurrency(positionSize.capitalRequired)}</p>
+                    <p className="text-xl font-bold">{formatCurrency(positionSize.capital_required)}</p>
                   </div>
                   <div className="text-center p-3 bg-background rounded-lg">
                     <p className="text-xs text-muted-foreground mb-1">Price Diff</p>
@@ -197,45 +214,65 @@ export default function RiskPage() {
           {/* Daily Loss Limit */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Daily Loss Limit
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Daily Loss Limit
+                </CardTitle>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={loadDailyLimit} disabled={limitLoading}>
+                  <RefreshCw className={`h-4 w-4 ${limitLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-3 bg-red-500/10 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Max Loss</p>
-                  <p className="text-xl font-bold text-red-600">{formatCurrency(dailyLimit.maxLoss)}</p>
+              {limitLoading ? (
+                <div className="flex justify-center py-6">
+                  <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Current Loss</p>
-                  <p className="text-xl font-bold text-yellow-600">{formatCurrency(dailyLimit.currentLoss)}</p>
-                </div>
-                <div className="text-center p-3 bg-green-500/10 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-1">Remaining</p>
-                  <p className="text-xl font-bold text-green-600">{formatCurrency(dailyLimit.remainingLoss)}</p>
-                </div>
-              </div>
-              <div className="w-full bg-muted rounded-full h-4">
-                <div
-                  className={`h-4 rounded-full ${
-                    dailyLimit.currentLoss / dailyLimit.maxLoss < 0.5
-                      ? 'bg-green-500'
-                      : dailyLimit.currentLoss / dailyLimit.maxLoss < 0.8
-                      ? 'bg-yellow-500'
-                      : 'bg-red-500'
-                  }`}
-                  style={{ width: `${Math.min((dailyLimit.currentLoss / dailyLimit.maxLoss) * 100, 100)}%` }}
-                />
-              </div>
-              {dailyLimit.isLimitHit && (
-                <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
-                  <p className="text-red-600 font-medium flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4" />
-                    Daily loss limit reached! Stop trading for today.
+              ) : limitError || !dailyLimit ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
+                  <AlertTriangle className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">
+                    {limitError ?? 'Daily limit unavailable'}
                   </p>
                 </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 bg-red-500/10 rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Max Loss</p>
+                      <p className="text-xl font-bold text-red-600">{formatCurrency(dailyLimit.max_loss)}</p>
+                    </div>
+                    <div className="text-center p-3 bg-yellow-500/10 rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Current Loss</p>
+                      <p className="text-xl font-bold text-yellow-600">{formatCurrency(dailyLimit.current_loss)}</p>
+                    </div>
+                    <div className="text-center p-3 bg-green-500/10 rounded-lg">
+                      <p className="text-xs text-muted-foreground mb-1">Remaining</p>
+                      <p className="text-xl font-bold text-green-600">{formatCurrency(dailyLimit.remaining_loss)}</p>
+                    </div>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-4">
+                    <div
+                      className={`h-4 rounded-full ${
+                        dailyLimit.current_loss / dailyLimit.max_loss < 0.5
+                          ? 'bg-green-500'
+                          : dailyLimit.current_loss / dailyLimit.max_loss < 0.8
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min((dailyLimit.current_loss / dailyLimit.max_loss) * 100, 100)}%` }}
+                    />
+                  </div>
+                  {dailyLimit.is_limit_hit && (
+                    <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-lg">
+                      <p className="text-red-600 font-medium flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        Daily loss limit reached! Stop trading for today.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>

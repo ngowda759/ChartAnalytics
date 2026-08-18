@@ -72,7 +72,7 @@ def _active_source() -> str:
     return market_data.get_market_data_provider()
 
 
-@router.get("/", response_model=List[ScanResult])
+@router.get("", response_model=List[ScanResult])
 async def scan_market(
     scan_types: Optional[str] = Query(None, description="Comma-separated scan types"),
     min_confidence: float = Query(60.0, ge=0, le=100),

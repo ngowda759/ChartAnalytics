@@ -97,9 +97,21 @@ async function fetchApi<T>(
     });
 
     if (!response.ok) {
+      // Prefer the backend's structured error message (FastAPI returns
+      // {"detail": "..."} for HTTPException) so the UI shows a useful,
+      // user-facing reason instead of a bare "HTTP error! status: 503".
+      let detail = `HTTP error! status: ${response.status}`;
+      try {
+        const body = await response.json();
+        if (body && typeof body.detail === 'string' && body.detail.trim()) {
+          detail = body.detail;
+        }
+      } catch {
+        // Non-JSON body (e.g. 502/504 from a proxy) — keep the status message.
+      }
       return {
         data: null as T,
-        error: `HTTP error! status: ${response.status}`,
+        error: detail,
       };
     }
 
@@ -220,10 +232,10 @@ export const indicatorsApi = {
 
 // Journal API
 export const journalApi = {
-  getTrades: (limit = 50) => fetchApi<any[]>(`/journal/?limit=${limit}`),
+  getTrades: (limit = 50) => fetchApi<any[]>(`/journal?limit=${limit}`),
   getTrade: (tradeId: string) => fetchApi<any>(`/journal/${tradeId}`),
   createTrade: (trade: any) =>
-    fetchApi<any>('/journal/', { method: 'POST', body: JSON.stringify(trade) }),
+    fetchApi<any>('/journal', { method: 'POST', body: JSON.stringify(trade) }),
   updateTrade: (tradeId: string, updates: any) =>
     fetchApi<any>(`/journal/${tradeId}`, {
       method: 'PUT',
@@ -299,7 +311,7 @@ export const aiApi = {
 
 // Scanner API
 export const scannerApi = {
-  getScanResults: () => fetchApi<unknown[]>('/scanner/'),
+  getScanResults: () => fetchApi<unknown[]>('/scanner'),
   getBreakouts: () => fetchApi<unknown[]>('/scanner/breakouts'),
   getOIBuildups: () => fetchApi<unknown[]>('/scanner/oi-buildup'),
   getDashboard: (dashboardId: string) =>
@@ -335,10 +347,10 @@ export const scannerApi = {
 export const alertsApi = {
   getAlerts: (isActive?: boolean) => {
     const params = isActive !== undefined ? `?is_active=${isActive}` : '';
-    return fetchApi<any[]>(`/alerts/${params}`);
+    return fetchApi<any[]>(`/alerts${params}`);
   },
   createAlert: (alert: any) =>
-    fetchApi<any>('/alerts/', { method: 'POST', body: JSON.stringify(alert) }),
+    fetchApi<any>('/alerts', { method: 'POST', body: JSON.stringify(alert) }),
   updateAlert: (alertId: string, updates: any) =>
     fetchApi<any>(`/alerts/${alertId}`, {
       method: 'PUT',
@@ -351,11 +363,11 @@ export const alertsApi = {
 
 // Strategy API
 export const strategiesApi = {
-  getStrategies: () => fetchApi<any[]>('/strategies/'),
+  getStrategies: () => fetchApi<any[]>('/strategies'),
   getStrategy: (strategyId: string) =>
     fetchApi<any>(`/strategies/${strategyId}`),
   createStrategy: (strategy: any) =>
-    fetchApi<any>('/strategies/', { method: 'POST', body: JSON.stringify(strategy) }),
+    fetchApi<any>('/strategies', { method: 'POST', body: JSON.stringify(strategy) }),
   updateStrategy: (strategyId: string, updates: any) =>
     fetchApi<any>(`/strategies/${strategyId}`, {
       method: 'PUT',
@@ -444,7 +456,7 @@ export interface AgentAnalysisListResponse {
 export const agentAnalysisApi = {
   list: (limit = 25, refresh = false) =>
     fetchApi<AgentAnalysisListResponse>(
-      `/agent-analysis/?limit=${limit}${refresh ? '&refresh=true' : ''}`
+      `/agent-analysis?limit=${limit}${refresh ? '&refresh=true' : ''}`
     ),
   get: (symbol: string, refresh = false) =>
     fetchApi<Record<string, unknown>>(

@@ -1,5 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Next.js issues a 308 redirect for paths with a trailing slash before the
+  // rewrite runs (e.g. /api/v1/scanner/ -> /api/v1/scanner), which then hits the
+  // backend's own 307 redirect back to the slashed path. That redirect storm
+  // turns one API call into 2-3 round trips and shows up as duplicate
+  // requests / console noise. Skip the Next.js trailing-slash redirect so the
+  // browser request goes straight through the rewrite to FastAPI.
+  skipTrailingSlashRedirect: true,
   images: {
     remotePatterns: [
       {

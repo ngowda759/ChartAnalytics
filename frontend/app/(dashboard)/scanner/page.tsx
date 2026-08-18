@@ -17,7 +17,17 @@ interface ScanResult {
   price: number;
   change_percent: number;
   volume_ratio?: number | null;
+  details?: {
+    atr?: number | null;
+    volume_ratio?: number | null;
+    change_percent?: number | null;
+    rsi?: number | null;
+    ema?: number | null;
+    [key: string]: unknown;
+  } | null;
   timestamp: string;
+  source?: string | null;
+  status?: string | null;
 }
 
 const SCAN_TYPE_LABELS: Record<string, string> = {
@@ -91,6 +101,11 @@ export default function ScannerPage() {
             {lastScan && (
               <span className="ml-2 text-xs">
                 • Last scan: {lastScan.toLocaleTimeString('en-IN')}
+              </span>
+            )}
+            {results[0]?.source && (
+              <span className="ml-2 text-xs capitalize">
+                • Source: {results[0].source}
               </span>
             )}
           </p>
@@ -193,6 +208,12 @@ export default function ScannerPage() {
                       <p className="text-xs text-muted-foreground">Vol Ratio</p>
                       <p className="font-semibold">{r.volume_ratio != null ? `${r.volume_ratio.toFixed(1)}x` : 'N/A'}</p>
                     </div>
+                    {r.details?.atr != null && (
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground">ATR</p>
+                        <p className="font-semibold">{r.details.atr.toFixed(2)}</p>
+                      </div>
+                    )}
                     <div className="text-right w-20">
                       <p className="text-xs text-muted-foreground">Confidence</p>
                       <div className="flex items-center gap-2">
