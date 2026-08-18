@@ -26,18 +26,22 @@ from app.schemas.scanner import (
     VolumeSignal,
 )
 from app.services import indicators
-from app.services.screener_engine import Candle, _generate_ohlc, _UNIVERSE
+from app.services.screener_engine import Candle, candles_for, _meta_for, _UNIVERSE
 
 
 def _candles_for(symbol: str) -> Optional[List[Candle]]:
-    meta = next((m for m in _UNIVERSE if m["symbol"] == symbol), None)
-    if meta is None:
-        return None
-    return _generate_ohlc(meta["symbol"], meta["base"])
+    """Back-compat wrapper: real candles via the unified resolver, else None."""
+    candles, _src = candles_for(symbol)
+    return candles
 
 
-def _meta_for(symbol: str) -> Optional[Dict]:
-    return next((m for m in _UNIVERSE if m["symbol"] == symbol), None)
+def _source_status(src: str) -> Tuple[str, str]:
+    """Map a market_data source label to (source, status)."""
+    if src == "mock":
+        return "mock", "mock"
+    if src == "unavailable":
+        return "unavailable", "unavailable"
+    return src, "live"
 
 
 def _last_change_percent(candles: List[Candle]) -> float:
@@ -221,18 +225,24 @@ def scan_market(
     min_confidence: float = 60.0,
     limit: int = 50,
 ) -> List[ScanResult]:
-    """Run deterministic scans across the stock universe.
+    """Run scans across the stock universe on REAL OHLCV.
 
     Returns only rows where a real indicator condition is met and the
-    computed confidence is >= ``min_confidence``. No random values.
+    computed confidence is >= ``min_confidence``. Each result carries the
+    ``source`` it was computed from (yfinance/angel_one/kite/mock) and a
+    ``status`` (live/mock/unavailable). Symbols with no real data are skipped
+    rather than fabricated.
     """
+    from app.services import market_data
+
     types = scan_types or list(ScanType)
     results: List[ScanResult] = []
     now = datetime.utcnow()
     for meta in _UNIVERSE:
-        candles = _candles_for(meta["symbol"])
+        candles, src = candles_for(meta["symbol"])
         if not candles:
             continue
+        source, status = _source_status(src)
         for scan_type in types:
             evaluator = _EVALUATORS.get(scan_type)
             if evaluator is None:
@@ -259,6 +269,8 @@ def scan_market(
                     volume_ratio=_volume_ratio(candles),
                     details=details,
                     timestamp=now,
+                    source=source,
+                    status=status,
                 )
             )
     results.sort(key=lambda r: r.confidence, reverse=True)
@@ -266,18 +278,25 @@ def scan_market(
 
 
 def scan_breakouts(limit: int = 20) -> List[BreakoutSignal]:
-    """Deterministic breakout scan: close vs 20-day high/low + ATR + volume."""
+    """Breakout scan on REAL OHLC: close vs 20-day high/low + ATR + volume.
+
+    A breakout is defined as: current close breaking above the previous
+    20-day high (resistance) or below the previous 20-day low (support),
+    optionally confirmed by volume > 1.0x the 20-day average. The breakout
+    level, current price and volume ratio are all returned. Deterministic
+    given the OHLCV input.
+    """
     results: List[BreakoutSignal] = []
     for meta in _UNIVERSE:
-        candles = _candles_for(meta["symbol"])
+        candles, src = candles_for(meta["symbol"])
         if not candles or len(candles) < 21:
             continue
+        source, status = _source_status(src)
         last = candles[-1]
         high20 = max(c.high for c in candles[-21:-1])
         low20 = min(c.low for c in candles[-21:-1])
         atr = _atr(candles)
         vol_ratio = _volume_ratio(candles)
-        # Resistance breakout candidate
         if last.close > high20 * 0.98:
             breakout_price = round(high20, 2)
             dist = ((last.close - breakout_price) / breakout_price) * 100
@@ -292,9 +311,10 @@ def scan_breakouts(limit: int = 20) -> List[BreakoutSignal]:
                     volume_ratio=vol_ratio,
                     atr=atr,
                     confidence=confidence,
+                    source=source,
+                    status=status,
                 )
             )
-        # Support breakdown candidate
         elif last.close < low20 * 1.02:
             breakout_price = round(low20, 2)
             dist = ((last.close - breakout_price) / breakout_price) * 100
@@ -309,6 +329,8 @@ def scan_breakouts(limit: int = 20) -> List[BreakoutSignal]:
                     volume_ratio=vol_ratio,
                     atr=atr,
                     confidence=confidence,
+                    source=source,
+                    status=status,
                 )
             )
     results.sort(key=lambda r: r.confidence, reverse=True)
@@ -316,12 +338,13 @@ def scan_breakouts(limit: int = 20) -> List[BreakoutSignal]:
 
 
 def scan_ema_crosses(limit: int = 20) -> List[EMACrossSignal]:
-    """Deterministic EMA crossover scan (9 vs 21)."""
+    """EMA crossover scan (9 vs 21) on REAL OHLC."""
     results: List[EMACrossSignal] = []
     for meta in _UNIVERSE:
-        candles = _candles_for(meta["symbol"])
+        candles, src = candles_for(meta["symbol"])
         if not candles or len(candles) < 30:
             continue
+        source, status = _source_status(src)
         closes = [c.close for c in candles]
         fast = indicators.calculate_ema(closes, 9)
         slow = indicators.calculate_ema(closes, 21)
@@ -352,6 +375,8 @@ def scan_ema_crosses(limit: int = 20) -> List[EMACrossSignal]:
                 rsi=round(rsi_now, 2),
                 volume_ratio=vol_ratio,
                 confidence=confidence,
+                source=source,
+                status=status,
             )
         )
     results.sort(key=lambda r: r.confidence, reverse=True)
@@ -359,12 +384,13 @@ def scan_ema_crosses(limit: int = 20) -> List[EMACrossSignal]:
 
 
 def scan_volume_spikes(limit: int = 20) -> List[VolumeSignal]:
-    """Deterministic volume-spike scan (volume > 2x 20-day average)."""
+    """Volume-spike scan (volume > 2x 20-day average) on REAL OHLC."""
     results: List[VolumeSignal] = []
     for meta in _UNIVERSE:
-        candles = _candles_for(meta["symbol"])
+        candles, src = candles_for(meta["symbol"])
         if not candles or len(candles) < 21:
             continue
+        source, status = _source_status(src)
         vol_ratio = _volume_ratio(candles)
         if vol_ratio < 2.0:
             continue
@@ -383,6 +409,8 @@ def scan_volume_spikes(limit: int = 20) -> List[VolumeSignal]:
                 price_change=change,
                 delivery_percent=None,
                 confidence=confidence,
+                source=source,
+                status=status,
             )
         )
     results.sort(key=lambda r: r.volume_ratio, reverse=True)
@@ -390,39 +418,55 @@ def scan_volume_spikes(limit: int = 20) -> List[VolumeSignal]:
 
 
 def scan_oi_buildup(limit: int = 20) -> List[OISignal]:
-    """Deterministic OI-buildup proxy scan.
+    """OI-buildup scan.
 
-    Real open-interest data requires a derivatives feed that is not available
-    offline. This uses a price+trend+volume proxy and is clearly labelled in
-    the interpretation so it is never mistaken for live option OI.
+    Real open-interest classification (long buildup / short buildup / short
+    covering / long unwinding) requires a derivatives option-chain feed with
+    actual Call OI, Put OI and OI change. yfinance does not provide NSE
+    index option OI and no broker is configured by default, so this scan
+    returns an explicit ``unavailable`` result rather than fabricated OI
+    numbers. When a broker with option-chain support is configured, real OI
+    is classified here.
     """
+    from app.services import market_data
+
+    provider = market_data.get_market_data_provider()
+    has_option_feed = provider in ("angel_one", "kite") and market_data._broker_configured(provider)
+
     results: List[OISignal] = []
+    now = datetime.utcnow()
+    if not has_option_feed:
+        # Truthful unavailable state — never synthetic OI.
+        results.append(
+            OISignal(
+                symbol="NIFTY",
+                type="unavailable",
+                change_call_oi=0,
+                change_put_oi=0,
+                price_change=0.0,
+                pcr=0.0,
+                interpretation=(
+                    "OI buildup unavailable: no derivatives/option-OI data "
+                    "provider configured (configure Angel One or Kite for OI)."
+                ),
+                confidence=0.0,
+                source="unavailable",
+                status="unavailable",
+            )
+        )
+        return results[:limit]
+
     for meta in _UNIVERSE:
-        candles = _candles_for(meta["symbol"])
+        candles, src = candles_for(meta["symbol"])
         if not candles or len(candles) < 30:
             continue
-        closes = [c.close for c in candles]
-        ema20 = indicators.calculate_ema(closes, 20)
-        ema50 = indicators.calculate_ema(closes, 50)
-        if ema20[-1] is None or ema50[-1] is None:
-            continue
-        vol_ratio = _volume_ratio(candles)
+        source, status = _source_status(src)
         change = _last_change_percent(candles)
-        if ema20[-1] > ema50[-1] and change > 0 and vol_ratio > 1.1:
-            oi_type = "buildup"
-            interp = "Bullish buildup (price+volume proxy)"
-            confidence = _clamp_confidence(58 + min(25, change * 5) + min(17, (vol_ratio - 1.1) * 20))
-            pcr = round(max(0.7, min(1.3, 1.0 - change * 0.05)), 2)
-        elif ema20[-1] < ema50[-1] and change < 0 and vol_ratio > 1.1:
-            oi_type = "unwinding"
-            interp = "Bearish unwinding (price+volume proxy)"
-            confidence = _clamp_confidence(58 + min(25, abs(change) * 5) + min(17, (vol_ratio - 1.1) * 20))
-            pcr = round(max(0.7, min(1.3, 1.0 + abs(change) * 0.05)), 2)
-        else:
+        chain = market_data.get_real_option_chain(meta["symbol"])  # type: ignore[attr-defined]
+        classification = _classify_oi(chain, change) if chain else None
+        if classification is None:
             continue
-        # Deterministic proxy OI deltas derived from volume ratio (not random).
-        change_call = int(-vol_ratio * 10000)
-        change_put = int(vol_ratio * 10000)
+        oi_type, change_call, change_put, pcr, interp, confidence = classification
         results.append(
             OISignal(
                 symbol=meta["symbol"],
@@ -433,7 +477,37 @@ def scan_oi_buildup(limit: int = 20) -> List[OISignal]:
                 pcr=pcr,
                 interpretation=interp,
                 confidence=confidence,
+                source=source,
+                status=status,
             )
         )
     results.sort(key=lambda r: r.confidence, reverse=True)
     return results[:limit]
+
+
+def _classify_oi(chain, price_change: float):
+    """Classify real option-chain OI into buildup/unwinding/covering.
+
+    Rules (price up + call OI up + put OI down = long buildup, etc.).
+    Returns (type, change_call_oi, change_put_oi, pcr, interp, confidence)
+    or None when the chain lacks usable OI.
+    """
+    if not chain:
+        return None
+    call_oi_chg = sum(getattr(c, "call_change_oi", 0) or 0 for c in chain)
+    put_oi_chg = sum(getattr(c, "put_change_oi", 0) or 0 for c in chain)
+    call_oi = sum(getattr(c, "call_oi", 0) or 0 for c in chain)
+    put_oi = sum(getattr(c, "put_oi", 0) or 0 for c in chain)
+    pcr = round(put_oi / call_oi, 2) if call_oi else 0.0
+    if price_change > 0 and call_oi_chg > 0 and put_oi_chg < 0:
+        oi_type, interp = "long_buildup", "Long buildup (price up, call OI up, put OI down)"
+    elif price_change < 0 and call_oi_chg < 0 and put_oi_chg > 0:
+        oi_type, interp = "short_buildup", "Short buildup (price down, put OI up, call OI down)"
+    elif price_change > 0 and call_oi_chg < 0 and put_oi_chg > 0:
+        oi_type, interp = "short_covering", "Short covering (price up, put OI up, call OI down)"
+    elif price_change < 0 and call_oi_chg > 0 and put_oi_chg < 0:
+        oi_type, interp = "long_unwinding", "Long unwinding (price down, call OI up, put OI down)"
+    else:
+        return None
+    confidence = _clamp_confidence(58 + min(30, abs(price_change) * 5))
+    return oi_type, int(call_oi_chg), int(put_oi_chg), pcr, interp, confidence

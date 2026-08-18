@@ -15,7 +15,7 @@ class TestDecisionSignalsEndpoint:
         r = client.get("/api/v1/decision-signals/signals?limit=5")
         assert r.status_code == 200
         body = r.json()
-        assert body["source"] == "synthetic"
+        assert body["source"] == "mock"
         assert body["generated_at"]
         assert body["is_stale"] in (True, False)
         for s in body["signals"]:

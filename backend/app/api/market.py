@@ -286,3 +286,34 @@ async def search_symbols(q: str = Query(..., min_length=1)):
     results = await service.search_symbols(q)
 
     return {"results": results}
+
+
+@router.get("/status")
+async def market_data_status():
+    """Market-data status indicator for the dashboard (no secrets).
+
+    Reports the active provider, whether it is connected, and the last
+    successful data timestamp so the UI can show LIVE / CACHED / UNAVAILABLE.
+    """
+    from app.services import market_data
+
+    provider = market_data.get_market_data_provider()
+    last_success = market_data.last_success_at()
+    connected = last_success is not None or provider in ("yfinance", "mock")
+    if provider == "mock":
+        status = "mock"
+        label = "MOCK (DEVELOPMENT MODE)"
+    elif connected:
+        status = "live"
+        label = provider.upper()
+    else:
+        status = "unavailable"
+        label = "LIVE PROVIDER NOT CONFIGURED"
+    return {
+        "status": status,
+        "provider": provider,
+        "label": label,
+        "connected": connected,
+        "last_success": last_success,
+        "error": market_data.last_error_for("quote") or market_data.last_error_for("ohlc"),
+    }

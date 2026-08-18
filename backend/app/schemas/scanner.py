@@ -38,6 +38,8 @@ class ScanResult(BaseModel):
     volume_ratio: Optional[float] = None
     details: Dict[str, float]
     timestamp: datetime
+    source: str = "unavailable"  # yfinance | angel_one | kite | mock | unavailable
+    status: str = "unavailable"  # live | cached | mock | unavailable
 
 
 class ScanSummary(BaseModel):
@@ -58,6 +60,8 @@ class BreakoutSignal(BaseModel):
     volume_ratio: float
     atr: float
     confidence: float
+    source: str = "unavailable"
+    status: str = "unavailable"
 
 
 class EMACrossSignal(BaseModel):
@@ -70,6 +74,8 @@ class EMACrossSignal(BaseModel):
     rsi: float
     volume_ratio: float
     confidence: float
+    source: str = "unavailable"
+    status: str = "unavailable"
 
 
 class VolumeSignal(BaseModel):
@@ -81,17 +87,21 @@ class VolumeSignal(BaseModel):
     price_change: float
     delivery_percent: Optional[float] = None
     confidence: float
+    source: str = "unavailable"
+    status: str = "unavailable"
 
 
 class OISignal(BaseModel):
     symbol: str
-    type: str  # "buildup", "unwinding"
+    type: str  # "buildup", "unwinding", "unavailable"
     change_call_oi: int
     change_put_oi: int
     price_change: float
     pcr: float
     interpretation: str
     confidence: float
+    source: str = "unavailable"
+    status: str = "unavailable"
 
 
 class ScreenerRow(BaseModel):

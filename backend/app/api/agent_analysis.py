@@ -21,8 +21,16 @@ from app.services.trading_agents import (
 logger = structlog.get_logger()
 router = APIRouter()
 
-_AGENT_SOURCE = "synthetic"
 _STALE_AFTER = timedelta(minutes=30)
+
+
+def _agent_source() -> str:
+    """Active market-data source for agent analysis (no override of the
+    per-result source, which already comes from the unified resolver)."""
+    from app.services import market_data
+
+    p = market_data.get_market_data_provider()
+    return p if p != market_data.SOURCE_UNAVAILABLE else "unavailable"
 
 
 @router.get(
@@ -79,6 +87,6 @@ async def list_agent_analysis(
         results=results,
         generated_at=now,
         data_timestamp=now,
-        source=_AGENT_SOURCE,
+        source=_agent_source(),
         is_stale=is_stale,
     )

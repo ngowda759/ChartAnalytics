@@ -24,7 +24,7 @@ from app.schemas.agent_analysis import (
     TraderAction,
     TraderProposal,
 )
-from app.services.screener_engine import Candle, _generate_ohlc, _UNIVERSE
+from app.services.screener_engine import Candle, _UNIVERSE
 from app.services.trading_agents.analysts import (
     RawAnalyst,
     composite_score,
@@ -132,15 +132,20 @@ def _final_decision(
 
 def analyze_symbol(symbol: str, name: Optional[str] = None, base: Optional[float] = None) -> AgentAnalysisResult:
     meta = next((m for m in _UNIVERSE if m["symbol"] == symbol), None)
-    if meta is None and base is None:
-        base = 1000.0
     if meta is not None:
         name = name or meta.get("name")
         base = base or meta["base"]
     elif base is None:
         base = 1000.0
 
-    candles = _generate_ohlc(symbol, float(base))
+    # Real OHLCV via the unified resolver (yfinance/angel_one/kite), synthetic
+    # only in explicit mock/dev mode. A real-data failure returns a clearly
+    # unavailable result instead of an invented analysis.
+    from app.services.screener_engine import candles_for
+
+    candles, _src = candles_for(symbol)
+    if not candles:
+        return _unavailable_agent_result(symbol, name)
     raw_analysts = run_analysts(candles)
     composite, _ = composite_score(raw_analysts)
 
@@ -167,11 +172,12 @@ def analyze_symbol(symbol: str, name: Optional[str] = None, base: Optional[float
         summary=risk.summary,
     )
     confidence = round(composite / 100.0, 2)
+    now = datetime.utcnow()
 
     return AgentAnalysisResult(
         symbol=symbol,
         name=name,
-        timestamp=datetime.utcnow(),
+        timestamp=now,
         analysts=analysts_out,
         investment_debate=inv_out,
         research_plan=plan,
@@ -179,6 +185,50 @@ def analyze_symbol(symbol: str, name: Optional[str] = None, base: Optional[float
         risk_debate=risk_out,
         final_decision=decision,
         confidence=confidence,
+        source=_src_for_agent(),
+        data_timestamp=now,
+        analysis_timestamp=now,
+    )
+
+
+def _src_for_agent() -> str:
+    from app.services import market_data
+
+    p = market_data.get_market_data_provider()
+    return p if p != market_data.SOURCE_UNAVAILABLE else "unavailable"
+
+
+def _unavailable_agent_result(symbol: str, name: Optional[str]) -> AgentAnalysisResult:
+    """Truthful result when real market data could not be fetched."""
+    now = datetime.utcnow()
+    empty_debate = DebateResult(turns=[], winner="draw", summary="Market data unavailable; debate skipped.")
+    return AgentAnalysisResult(
+        symbol=symbol,
+        name=name,
+        timestamp=now,
+        analysts=[
+            AnalystReport(role="market", summary="Market data unavailable", score=0, key_points=[]),
+        ],
+        investment_debate=empty_debate,
+        research_plan=ResearchPlan(
+            recommendation=PortfolioRating.HOLD,
+            rationale="Real market data unavailable; no position recommended.",
+            strategic_actions="None — await live data.",
+        ),
+        trader_proposal=TraderProposal(
+            action=TraderAction.HOLD,
+            reasoning="Market data unavailable",
+        ),
+        risk_debate=empty_debate,
+        final_decision=PortfolioDecision(
+            rating=PortfolioRating.HOLD,
+            executive_summary="Market data unavailable for this symbol.",
+            investment_thesis="No thesis — real OHLCV could not be fetched.",
+        ),
+        confidence=0.0,
+        source="unavailable",
+        data_timestamp=now,
+        analysis_timestamp=now,
     )
 
 

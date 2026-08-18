@@ -19,6 +19,7 @@ from app.api import (
     auth,
     decision_signals,
     agent_analysis,
+    system,
 )
 
 # Configure structured logging
@@ -43,10 +44,16 @@ async def lifespan(app: FastAPI):
     # The provider is chosen lazily in get_market_service(); resolve it here once
     # so the startup log clearly states the production data source.
     from app.services.market_service import get_market_service
+    from app.services import market_data
     try:
+        provider_label = market_data.provider_display_name()
+        logger.info("MARKET DATA PROVIDER = %s", provider_label)
         service = get_market_service()
         provider_name = getattr(service.provider, "name", type(service.provider).__name__)
-        logger.info("MARKET DATA PROVIDER = %s", provider_name)
+        logger.info("MARKET DATA PROVIDER RESOLVED = %s", provider_name)
+    except RuntimeError as exc:
+        # Production refused to start on mock — surface it loudly.
+        logger.error("LIVE MARKET DATA NOT CONFIGURED = %s", str(exc))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("market_provider_resolve_failed", error=str(exc))
 
@@ -151,6 +158,7 @@ app.include_router(
     prefix="/api/v1/agent-analysis",
     tags=["Agent Analysis"],
 )
+app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 
 
 @app.get("/")

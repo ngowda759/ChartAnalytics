@@ -452,6 +452,36 @@ export const agentAnalysisApi = {
     ),
 };
 
+// ---------------------------------------------------------------------------
+// System / market-data provider status
+// ---------------------------------------------------------------------------
+
+export interface MarketDataStatus {
+  status: 'live' | 'cached' | 'unavailable' | 'mock' | string;
+  provider: string;
+  label: string;
+  connected: boolean;
+  last_success?: string | null;
+  error?: string | null;
+}
+
+export interface DataProviderStatus {
+  provider: string;
+  configured: boolean;
+  connected: boolean;
+  quote: boolean;
+  historical_ohlcv: boolean;
+  options: boolean;
+  last_success?: string | null;
+  error?: string | null;
+}
+
+export const systemApi = {
+  marketStatus: async () => (await fetchApi<MarketDataStatus>('/market/status')).data,
+  dataProvider: async () =>
+    (await fetchApi<DataProviderStatus>('/system/data-provider')).data,
+};
+
 export default {
   market: marketApi,
   options: optionsApi,
@@ -464,4 +494,5 @@ export default {
   strategies: strategiesApi,
   decisionSignals: decisionSignalsApi,
   agentAnalysis: agentAnalysisApi,
+  system: systemApi,
 };

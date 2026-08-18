@@ -313,27 +313,167 @@ _market_service: Optional[MarketDataService] = None
 
 
 def get_market_service() -> MarketDataService:
-    """Get or create market service instance."""
+    """Get or create market service instance.
+
+    Provider selection is EXPLICIT and never silently falls back to mock:
+      - MARKET_DATA_PROVIDER=kite       -> Kite Connect (needs credentials)
+      - MARKET_DATA_PROVIDER=angel_one  -> Angel One (needs credentials)
+      - MARKET_DATA_PROVIDER=yfinance    -> Yahoo Finance (no credentials)
+      - MARKET_DATA_PROVIDER=auto        -> kite > angel_one > yfinance
+      - MARKET_DATA_PROVIDER=mock        -> synthetic dev/test data (explicit)
+    In production, "mock" is rejected unless ALLOW_MOCK_IN_PRODUCTION=true.
+    """
     global _market_service
     if _market_service is None:
-        # Priority: Kite Connect > Angel One > Mock
-        if settings.KITE_CONNECT_ENABLED and settings.KITE_CONNECT_API_KEY:
-            logger.info("using_kite_connect_provider")
-            provider = create_kite_connect_provider(
-                api_key=settings.KITE_CONNECT_API_KEY,
-                access_token=settings.KITE_CONNECT_ACCESS_TOKEN,
-            )
-            _market_service = MarketDataService(provider=provider)
-        elif settings.ANGEL_ONE_ENABLED and settings.ANGEL_ONE_API_KEY:
-            logger.info("using_angel_one_provider")
-            provider = create_angel_one_provider(
-                api_key=settings.ANGEL_ONE_API_KEY,
-                client_code=settings.ANGEL_ONE_CLIENT_CODE,
-                password=settings.ANGEL_ONE_PASSWORD,
-                totp_secret=settings.ANGEL_ONE_TOTP_SECRET,
-            )
-            _market_service = MarketDataService(provider=provider)
-        else:
-            logger.info("using_mock_provider", reason="no_live_provider_configured")
+        from app.services import market_data
+
+        provider_name = market_data.get_market_data_provider()
+
+        if provider_name == market_data.SOURCE_MOCK:
+            if not market_data.mock_allowed_in_production():
+                # Production must fail clearly instead of silently running mock.
+                raise RuntimeError(
+                    "LIVE MARKET DATA NOT CONFIGURED: MARKET_DATA_PROVIDER=mock "
+                    "is not allowed in production (set a live provider or "
+                    "ALLOW_MOCK_IN_PRODUCTION=true to override)."
+                )
+            logger.warning("using_mock_provider", reason="explicit_development_mode")
             _market_service = MarketDataService(provider=MockDataProvider())
+        elif provider_name == market_data.SOURCE_KITE:
+            if settings.KITE_CONNECT_ENABLED and settings.KITE_CONNECT_API_KEY:
+                logger.info("using_kite_connect_provider")
+                provider = create_kite_connect_provider(
+                    api_key=settings.KITE_CONNECT_API_KEY,
+                    access_token=settings.KITE_CONNECT_ACCESS_TOKEN,
+                )
+                _market_service = MarketDataService(provider=provider)
+            else:
+                logger.warning(
+                    "kite_provider_not_configured",
+                    reason="missing KITE_CONNECT_API_KEY/ACCESS_TOKEN",
+                )
+                _market_service = MarketDataService(provider=_UnavailableProvider("kite"))
+        elif provider_name == market_data.SOURCE_ANGEL_ONE:
+            if settings.ANGEL_ONE_ENABLED and settings.ANGEL_ONE_API_KEY:
+                logger.info("using_angel_one_provider")
+                provider = create_angel_one_provider(
+                    api_key=settings.ANGEL_ONE_API_KEY,
+                    client_code=settings.ANGEL_ONE_CLIENT_CODE,
+                    password=settings.ANGEL_ONE_PASSWORD,
+                    totp_secret=settings.ANGEL_ONE_TOTP_SECRET,
+                )
+                _market_service = MarketDataService(provider=provider)
+            else:
+                logger.warning(
+                    "angel_one_provider_not_configured",
+                    reason="missing ANGEL_ONE_API_KEY/CLIENT_CODE",
+                )
+                _market_service = MarketDataService(
+                    provider=_UnavailableProvider("angel_one")
+                )
+        else:
+            # yfinance (default, credential-free) — real data via the unified
+            # service; the MarketDataService OHLC path already prefers yfinance.
+            logger.info("using_yfinance_provider", reason="credential_free_default")
+            _market_service = MarketDataService(provider=_YFinanceProvider())
     return _market_service
+
+
+class _YFinanceProvider(BaseDataProvider):
+    """Thin provider that delegates OHLC/quotes to the unified market_data
+    service (yfinance). Option chain is unavailable (yfinance has no NSE OI)."""
+
+    _PROVIDER_NAME = "yfinance"
+
+    @property
+    def name(self) -> str:
+        return "yfinance"
+
+    async def get_quote(self, symbol: str) -> Optional[TickerData]:
+        from app.services import market_data
+
+        q, src = market_data.get_real_quote(symbol)
+        if q is None:
+            return None
+        return TickerData(
+            symbol=q.symbol,
+            name=q.name,
+            price=q.price,
+            change=q.change,
+            change_percent=q.change_percent,
+            open=q.open,
+            high=q.high,
+            low=q.low,
+            close=q.close,
+            previous_close=q.previous_close,
+            volume=q.volume,
+            timestamp=q.timestamp,
+            metadata={"source": src},
+        )
+
+    async def get_quotes(self, symbols: List[str]) -> List[TickerData]:
+        out = []
+        for s in symbols:
+            q = await self.get_quote(s)
+            if q:
+                out.append(q)
+        return out
+
+    async def get_ohlc(
+        self,
+        symbol: str,
+        interval: str = "1d",
+        limit: int = 100,
+        start_date=None,
+        end_date=None,
+    ) -> List[OHLCData]:
+        from app.services import market_data
+
+        candles, _src = market_data.get_real_candles(symbol, interval=interval, limit=limit)
+        if not candles:
+            return []
+        return [
+            OHLCData(timestamp=c.date, open=c.open, high=c.high, low=c.low, close=c.close, volume=c.volume)
+            for c in candles
+        ]
+
+    async def get_option_chain(self, symbol: str, expiry=None):
+        return []  # yfinance has no NSE option OI — truthful unavailable
+
+    async def search_symbols(self, query: str):
+        return []
+
+    async def is_available(self) -> bool:
+        from app.services import market_data
+
+        return market_data.get_market_data_provider() != market_data.SOURCE_UNAVAILABLE
+
+
+class _UnavailableProvider(BaseDataProvider):
+    """Provider that returns nothing (truthful unavailable) — used when a live
+    provider is selected but its credentials are missing, instead of mock."""
+
+    def __init__(self, name: str):
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return f"{self._name} (not configured)"
+
+    async def get_quote(self, symbol: str):
+        return None
+
+    async def get_quotes(self, symbols: List[str]):
+        return []
+
+    async def get_ohlc(self, symbol, interval="1d", limit=100, start_date=None, end_date=None):
+        return []
+
+    async def get_option_chain(self, symbol, expiry=None):
+        return []
+
+    async def search_symbols(self, query):
+        return []
+
+    async def is_available(self) -> bool:
+        return False
