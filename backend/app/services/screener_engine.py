@@ -8,7 +8,7 @@ mirror popular Chartink screeners.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import random
 
@@ -66,7 +66,13 @@ def _seed_for(symbol: str) -> int:
 
 
 def _generate_ohlc(symbol: str, base: float, days: int = 260) -> List[Candle]:
-    """Deterministic synthetic daily candles seeded by symbol + hour."""
+    """Deterministic synthetic daily candles seeded by symbol + hour.
+
+    DEV/TEST ONLY. Production never calls this directly; it goes through
+    ``market_data.get_real_candles`` which fetches real OHLCV. Kept here so the
+    explicit ``MARKET_DATA_PROVIDER=mock`` mode and the unit tests that assert
+    deterministic scanner math over a known series still work.
+    """
     rng = random.Random(_seed_for(symbol))
     candles: List[Candle] = []
     price = base * (1 + rng.uniform(-0.15, 0.05))
@@ -89,6 +95,27 @@ def _generate_ohlc(symbol: str, base: float, days: int = 260) -> List[Candle]:
         price = close
 
     return candles
+
+
+def _meta_for(symbol: str) -> Optional[Dict]:
+    return next((m for m in _UNIVERSE if m["symbol"] == symbol), None)
+
+
+def candles_for(symbol: str, interval: str = "1d", limit: int = 260) -> Tuple[Optional[List[Candle]], str]:
+    """Unified candle resolver used by every scanner/signal/agent.
+
+    Returns ``(candles, source)``. Real OHLCV is fetched through the unified
+    market-data service; only the explicit mock/dev provider returns synthetic
+    candles. On a real-data failure returns ``(None, "unavailable")`` so the
+    caller surfaces a truthful state instead of fabricating a series.
+    """
+    from app.services import market_data
+
+    if market_data.is_mock_mode():
+        meta = _meta_for(symbol)
+        base = meta["base"] if meta else 1000.0
+        return _generate_ohlc(symbol, base, days=limit), market_data.SOURCE_MOCK
+    return market_data.get_real_candles(symbol, interval=interval, limit=limit)
 
 
 def _sma(values: List[float], period: int, idx: int) -> Optional[float]:
@@ -194,8 +221,8 @@ def _to_row(meta: Dict, candles: List[Candle]) -> ScreenerRow:
 def _run_scan(predicate: Callable[[List[Candle]], bool], limit: int = 25) -> List[ScreenerRow]:
     rows: List[ScreenerRow] = []
     for meta in _UNIVERSE:
-        candles = _generate_ohlc(meta["symbol"], meta["base"])
-        if predicate(candles):
+        candles, _src = candles_for(meta["symbol"])
+        if candles and predicate(candles):
             rows.append(_to_row(meta, candles))
         if len(rows) >= limit:
             break

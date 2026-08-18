@@ -17,17 +17,22 @@ from app.services.trading_agents.rating import (
     rating_sign,
 )
 
-# The pipeline is deterministic per symbol + hour (synthetic OHLC is seeded by
-# symbol+hour). Cache results for ~30 minutes so a dashboard list request does
-# not re-run the full multi-agent pipeline for 30 symbols on every refresh.
+# The pipeline is deterministic per symbol + hour (real OHLCV via the unified
+# resolver, synthetic only in explicit mock/dev mode). Cache results for ~30
+# minutes so a dashboard list request does not re-run the full multi-agent
+# pipeline for 30 symbols on every refresh.
 _ANALYSIS_CACHE: TTLCache = TTLCache(ttl=30 * 60)
 _UNIVERSE_CACHE_KEY = "universe_v1"
-_AGENT_SOURCE = "synthetic"
 
 
 def _tag(result):
-    """Stamp the synthetic source + (non-stale) flag onto a result."""
-    result.source = _AGENT_SOURCE
+    """Stamp the real market-data source onto a result (no override of a
+    truthful 'unavailable' result)."""
+    from app.services import market_data
+
+    if result.source != "unavailable":
+        provider = market_data.get_market_data_provider()
+        result.source = provider if provider != market_data.SOURCE_UNAVAILABLE else "unavailable"
     result.is_stale = False
     return result
 

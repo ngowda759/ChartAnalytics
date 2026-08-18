@@ -50,11 +50,15 @@ def _risk_reward(entry: Optional[float], stop: Optional[float], target: Optional
 
 
 def _eval_to_signal(idx: int, ev: StrategyEval) -> DecisionSignal:
+    from app.services import market_data
+
     rr = _risk_reward(ev.entry, ev.stop_loss, ev.target)
     status = DecisionStatus.ACTIVE if ev.action != DecisionAction.AVOID else DecisionStatus.EXPIRED
     expires_at = ev.timestamp + SIGNAL_TTL
     if datetime.utcnow() > expires_at:
         status = DecisionStatus.EXPIRED
+    provider = market_data.get_market_data_provider()
+    source = provider if provider != market_data.SOURCE_UNAVAILABLE else "unavailable"
     return DecisionSignal(
         id=f"{ev.strategy}-{ev.symbol}-{ev.timestamp.strftime('%Y%m%d%H')}-{idx}",
         symbol=ev.symbol,
@@ -73,6 +77,7 @@ def _eval_to_signal(idx: int, ev: StrategyEval) -> DecisionSignal:
         reasons=ev.reasons,
         status=status,
         timestamp=ev.timestamp,
+        source=source,
     )
 
 

@@ -22,7 +22,7 @@ from app.schemas.scanner import (
 from app.services.screener_engine import (
     build_screener_widget,
     list_screener_slugs,
-    _generate_ohlc,
+    candles_for,
     _UNIVERSE,
 )
 from app.services.scanner_engine import (
@@ -65,6 +65,13 @@ def _log_scan(scanner: str, provider: str, started: float, source: str,
     )
 
 
+def _active_source() -> str:
+    """Active market-data source label for scan logging."""
+    from app.services import market_data
+
+    return market_data.get_market_data_provider()
+
+
 @router.get("/", response_model=List[ScanResult])
 async def scan_market(
     scan_types: Optional[str] = Query(None, description="Comma-separated scan types"),
@@ -91,7 +98,7 @@ async def scan_market(
         results = _scan_market(scan_types=types, min_confidence=min_confidence, limit=limit)
         _SCAN_CACHE.set(cache_key, results)
 
-    _log_scan("scan_market", "screener_engine", started, "synthetic", len(results))
+    _log_scan("scan_market", "screener_engine", started, _active_source(), len(results))
     return results
 
 
@@ -118,7 +125,7 @@ async def get_scan_summary(
     for r in results:
         by_type[r.scan_type.value] = by_type.get(r.scan_type.value, 0) + 1
 
-    _log_scan("scan_summary", "screener_engine", started, "synthetic", len(results))
+    _log_scan("scan_summary", "screener_engine", started, _active_source(), len(results))
     return ScanSummary(
         total_results=len(results),
         bullish_count=bullish,
@@ -135,7 +142,7 @@ async def scan_breakouts(limit: int = Query(20, ge=1, le=50)):
     started = time.time()
     logger.info("scanning_breakouts")
     results = _scan_breakouts(limit=limit)
-    _log_scan("breakouts", "screener_engine", started, "synthetic", len(results))
+    _log_scan("breakouts", "screener_engine", started, _active_source(), len(results))
     return results
 
 
@@ -145,7 +152,7 @@ async def scan_ema_crosses(limit: int = Query(20, ge=1, le=50)):
     started = time.time()
     logger.info("scanning_ema_crosses")
     results = _scan_ema_crosses(limit=limit)
-    _log_scan("ema_crosses", "screener_engine", started, "synthetic", len(results))
+    _log_scan("ema_crosses", "screener_engine", started, _active_source(), len(results))
     return results
 
 
@@ -155,7 +162,7 @@ async def scan_volume_spikes(limit: int = Query(20, ge=1, le=50)):
     started = time.time()
     logger.info("scanning_volume_spikes")
     results = _scan_volume_spikes(limit=limit)
-    _log_scan("volume_spikes", "screener_engine", started, "synthetic", len(results))
+    _log_scan("volume_spikes", "screener_engine", started, _active_source(), len(results))
     return results
 
 
@@ -165,7 +172,7 @@ async def scan_oi_buildup(limit: int = Query(20, ge=1, le=50)):
     started = time.time()
     logger.info("scanning_oi_buildup")
     results = _scan_oi_buildup(limit=limit)
-    _log_scan("oi_buildup", "screener_engine", started, "synthetic", len(results))
+    _log_scan("oi_buildup", "screener_engine", started, _active_source(), len(results))
     return results
 
 
@@ -200,16 +207,20 @@ def _det_row(meta: dict, candles) -> ScreenerRow:
 
 
 def _det_index_row(meta: dict) -> ScreenerRow:
-    """Deterministic index row from a seeded OHLC series."""
-    candles = _generate_ohlc(meta["symbol"], meta["base"])
+    """Index row from REAL OHLC (yfinance index) via the unified resolver."""
+    candles, _src = candles_for(meta["symbol"])
+    if not candles or len(candles) < 2:
+        return ScreenerRow(symbol=meta["symbol"], name=meta.get("name"))
     return _det_row(meta, candles)
 
 
 def _det_stock_rows(universe, n, *, change_filter=None, sort_key=None, extra_fn=None):
-    """Pick the top-n deterministic stock rows matching a filter."""
+    """Pick the top-n stock rows matching a filter, computed from REAL OHLC."""
     rows = []
     for meta in universe:
-        candles = _generate_ohlc(meta["symbol"], meta["base"])
+        candles, _src = candles_for(meta["symbol"])
+        if not candles or len(candles) < 2:
+            continue
         row = _det_row(meta, candles)
         if extra_fn:
             extra = extra_fn(meta, candles)

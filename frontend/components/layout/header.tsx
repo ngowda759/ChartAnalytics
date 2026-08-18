@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { MarketStatusBadge } from '@/components/dashboard/MarketStatusBadge';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -44,6 +45,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         <Badge variant="outline" className="ml-2 bg-green-500/10 text-green-600">
           Market Open
         </Badge>
+        <MarketStatusBadge />
       </div>
 
       <div className="flex items-center gap-2">

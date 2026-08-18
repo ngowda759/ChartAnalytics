@@ -109,6 +109,8 @@ class AgentAnalysisResult(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     source: str = "synthetic"
     is_stale: bool = False
+    data_timestamp: Optional[datetime] = None
+    analysis_timestamp: Optional[datetime] = None
 
 
 class AgentAnalysisListResponse(BaseModel):

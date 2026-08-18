@@ -151,3 +151,47 @@ aggressive/conservative/neutral risk debate → Portfolio Manager.
 - Frontend: `frontend/app/(dashboard)/agent-analysis/page.tsx` (summary
   cards + watchlist table + detail modal showing every pipeline stage) +
   `agentAnalysisApi` in `frontend/lib/api.ts` + sidebar nav entry.
+
+## Live market-data provider (yfinance default)
+
+The app MUST use a real market-data provider in production; the Mock
+provider is development-only and never silently activated (Phase 5/22).
+
+- **Provider matrix:** `app/services/market_data.py` — sources:
+  `SOURCE_YFINANCE` (default, credential-free, working in this env),
+  `SOURCE_ANGEL_ONE`, `SOURCE_KITE`, `SOURCE_NSE`, `SOURCE_MOCK`,
+  `SOURCE_UNAVAILABLE`.
+- **Selection:** `settings.MARKET_DATA_PROVIDER` (`auto` default →
+  broker if configured, else `yfinance`; `mock` only when explicit or
+  `ALLOW_MOCK_IN_PRODUCTION=true`). `get_market_data_provider()`
+  resolves the active source; `get_market_service()` uses it with NO
+  silent mock fallback.
+- **Unified resolver:** `candles_for(symbol) -> Tuple[List[Candle], str]`
+  in `app/services/market_data.py` returns OHLCV + source string. All
+  scanners/signals/agent-analysis consume this — they never know whether
+  the source is NSE/Angel/Kite/Yahoo/Mock (Phase 6 architecture:
+  Provider → Adapter → Normalized MarketData → Scanner Engine).
+- **Startup log:** `app/main.py` prints
+  `"MARKET DATA PROVIDER = <NAME>"` so the active provider is visible.
+- **Diagnostic endpoints:** `GET /api/v1/system/data-provider`
+  (`app/api/system.py`) and `GET /api/v1/market/status`
+  (`app/api/market.py`) return provider/configured/connected/quote/
+  historical_ohlcv/options/last_success. NEVER return secrets.
+- **Frontend badge:** `components/dashboard/MarketStatusBadge.tsx`
+  polls `/market/status` and shows ● LIVE/CACHED/UNAVAILABLE/MOCK with
+  provider + last-updated IST. Wired into the dashboard header.
+- **Source propagation:** every scan result, decision signal, and
+  agent-analysis result carries `source` (provider name) + `status`
+  (`live`/`cached`/`unavailable`/`mock`). Tests assert `source == "mock"`
+  under the conftest autouse mock-mode fixture.
+- **OI buildup:** truthfully `unavailable` when no real option feed is
+  configured — NO synthetic OI deltas (Phase 12).
+- **Bounded concurrency:** `fetch_universe_candles()` in
+  `market_data.py` respects `settings.SCANNER_CONCURRENCY` (default 5)
+  so the scanner universe fetch does not overwhelm the provider.
+- **Live verified (this env):** startup `YFINANCE`; `/market/status`
+  provider=yfinance connected=true; `/system/data-provider`
+  quote=true historical_ohlcv=true; scanner results source="yfinance"
+  status="live" with real prices; decision signals real entries;
+  agent analysis source="yfinance"; indices NIFTY 50=24208.15.
+  Options chain returns 503 (truthful unavailable — no broker).

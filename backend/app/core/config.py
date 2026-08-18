@@ -19,6 +19,21 @@ class Settings(BaseSettings):
     API_VERSION: str = "v1"
     APP_NAME: str = "AI Trading Assistant"
 
+    # Market-data provider selection.
+    # "auto"      -> yfinance (no credentials) + nsetools for indices/gainers
+    # "yfinance"  -> credential-free Yahoo Finance OHLCV/quotes
+    # "angel_one" -> Angel One SmartAPI (needs ANGEL_ONE_* credentials)
+    # "kite"      -> Zerodha Kite Connect (needs KITE_CONNECT_* credentials)
+    # "mock"      -> explicit development/test mode (synthetic labelled data)
+    # In production (ENVIRONMENT=production) "mock" is rejected unless explicitly
+    # allowed via ALLOW_MOCK_IN_PRODUCTION=true.
+    MARKET_DATA_PROVIDER: str = "auto"
+    ALLOW_MOCK_IN_PRODUCTION: bool = False
+    # Comma-separated scanner universe (NSE symbols). Empty -> default basket.
+    SCANNER_UNIVERSE: str = ""
+    # How many symbols to fetch concurrently from the live provider.
+    SCANNER_CONCURRENCY: int = 5
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",

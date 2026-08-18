@@ -21,11 +21,16 @@ from app.services.decision_signals import (
 logger = structlog.get_logger()
 router = APIRouter()
 
-# Signals are derived from synthetic OHLC; mark them as "synthetic" so the UI
-# never presents them as live market data.
-_SIGNAL_SOURCE = "synthetic"
 # Consider cached signals stale once they're older than this (matches cache TTL).
 _STALE_AFTER = timedelta(minutes=30)
+
+
+def _signal_source() -> str:
+    """Active market-data source for decision signals."""
+    from app.services import market_data
+
+    p = market_data.get_market_data_provider()
+    return p if p != market_data.SOURCE_UNAVAILABLE else "unavailable"
 
 
 @router.get("/strategies", response_model=List[str], summary="List available strategies")
@@ -59,7 +64,7 @@ async def get_signals(
         signals=signals,
         generated_at=now,
         data_timestamp=now,
-        source=_SIGNAL_SOURCE,
+        source=_signal_source(),
         is_stale=is_stale,
     )
 

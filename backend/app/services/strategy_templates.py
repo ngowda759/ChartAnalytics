@@ -425,7 +425,14 @@ def _levels_for(candles: List[Candle], template: Dict[str, Any], score: int) -> 
 def evaluate_symbol(
     symbol: str, name: Optional[str], base: float, template: Dict[str, Any]
 ) -> StrategyEval:
-    candles = _generate_ohlc(symbol, base)
+    # Real OHLCV via the unified resolver; falls back to synthetic ONLY when
+    # the explicit mock/dev provider is active. A real-data failure returns
+    # None (no fabricated signal) — handled by callers.
+    from app.services.screener_engine import candles_for
+
+    candles, _src = candles_for(symbol)
+    if not candles:
+        return _unavailable_eval(symbol, name, template)
     score, coverage, reasons = _evaluate_template(candles, template)
     entry, stop_loss, target = _levels_for(candles, template, score)
     action = _action_for_score(score)
@@ -444,6 +451,26 @@ def evaluate_symbol(
         target=target,
         horizon=HORIZON_SWING,
         reasons=reasons,
+        timestamp=datetime.utcnow(),
+    )
+
+
+def _unavailable_eval(symbol: str, name: Optional[str], template: Dict[str, Any]) -> StrategyEval:
+    """Truthful unavailable evaluation when real OHLCV could not be fetched."""
+    return StrategyEval(
+        symbol=symbol,
+        name=name,
+        strategy=template["name"],
+        display_name=template.get("display_name", template["name"]),
+        category=template.get("category", "unknown"),
+        action="avoid",
+        score=0,
+        confidence=0.0,
+        entry=None,
+        stop_loss=None,
+        target=None,
+        horizon=HORIZON_SWING,
+        reasons=["Real market data unavailable for this symbol"],
         timestamp=datetime.utcnow(),
     )
 
