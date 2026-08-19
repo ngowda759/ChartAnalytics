@@ -38,7 +38,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "https://tradingassistant.com",
+        "https://chartanalytics.vercel.app",
+        "https://chart-analytics-theta.vercel.app",
     ]
+    # Regex to allow any Vercel deploy/preview origin (production + per-commit
+    # previews both live under *.vercel.app). Empty disables regex matching.
+    CORS_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
 
     # Database - Firestore
     FIRESTORE_EMULATOR_HOST: str = "localhost:8080"

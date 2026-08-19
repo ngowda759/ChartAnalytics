@@ -20,7 +20,12 @@ services:
       # never touches the backend, so this is optional. Listed here so direct
       # calls from the Vercel frontend origin are also allowed if needed later.
       - key: CORS_ORIGINS
-        value: '["https://chartanalytics.vercel.app","https://tradingassistant.com"]'
+        value: '["https://chartanalytics.vercel.app","https://chart-analytics-theta.vercel.app","https://tradingassistant.com"]'
+      # Allow any Vercel deploy/preview origin (*.vercel.app) so per-commit
+      # previews and production both pass CORS preflight without enumerating
+      # each preview URL. Safe with allow_credentials (regex, not wildcard "*").
+      - key: CORS_ORIGIN_REGEX
+        value: 'https://.*\.vercel\.app'
       # Optional integrations — leave unset for read-only NSE / agent-analysis
       # endpoints (they need no external credentials).
       - key: FIRESTORE_PROJECT_ID
