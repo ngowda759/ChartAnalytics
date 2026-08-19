@@ -44,10 +44,13 @@ describe('MarketStats tile', () => {
     });
     renderWithClient(<MarketStats />);
     await waitFor(() => {
-      expect(screen.getByText('Advances')).toBeInTheDocument();
-      expect(screen.getByText('1,247')).toBeInTheDocument();
-      expect(screen.getByText('892')).toBeInTheDocument();
+      expect(screen.getByText('Market Breadth')).toBeInTheDocument();
+      // Breadth legend uses ▲/▼/● prefixes with en-IN grouping.
+      expect(screen.getByText('▲ 1,247')).toBeInTheDocument();
+      expect(screen.getByText('▼ 892')).toBeInTheDocument();
+      // NIFTY PCR + India VIX values render through the Value component.
       expect(screen.getByText('0.87')).toBeInTheDocument();
+      expect(screen.getByText('14.56')).toBeInTheDocument();
     });
     // Live data: no fallback banner.
     expect(screen.queryByText('Live data unavailable')).not.toBeInTheDocument();
@@ -106,7 +109,8 @@ describe('MarketStats tile', () => {
     const retry = await screen.findByText('Retry');
     await userEvent.click(retry);
     await waitFor(() => {
-      expect(screen.getByText('10')).toBeInTheDocument();
+      // Breadth legend ▲ advances = 10 renders after successful retry.
+      expect(screen.getByText('▲ 10')).toBeInTheDocument();
     });
   });
 });
