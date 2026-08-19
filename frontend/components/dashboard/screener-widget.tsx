@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Download, ChevronUp, ChevronDown, ChevronsUpDown, BarChart3 } from 'lucide-react';
 import type { ScreenerWidget as ScreenerWidgetType, ScreenerRow } from '@/lib/api';
-import { cn, formatVolume } from '@/lib/utils';
+import { cn, formatVolume, formatISTTime } from '@/lib/utils';
 
 type SortDir = 'asc' | 'desc' | null;
 
@@ -141,11 +141,7 @@ export function ScreenerWidget({ widget, showChartPreview }: Props) {
     }
   };
 
-  const updated = new Date(widget.last_updated).toLocaleTimeString('en-IN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Kolkata',
-  });
+  const updated = formatISTTime(widget.last_updated);
 
   // Per-widget provenance from the runtime repair. Maps the backend status/source
   // to a labelled badge so a cached/fallback/unavailable tile is never silent.

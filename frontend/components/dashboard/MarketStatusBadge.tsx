@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { systemApi, type MarketDataStatus } from '@/lib/api';
+import { IST_TIME_ZONE, parseUtc } from '@/lib/utils';
 
 const POLL_MS = 60_000;
 
@@ -47,8 +48,8 @@ export function MarketStatusBadge() {
           ? 'bg-sky-500'
           : 'bg-red-500';
   const updated = status.last_success
-    ? new Date(status.last_success).toLocaleTimeString('en-IN', {
-        timeZone: 'Asia/Kolkata',
+    ? parseUtc(status.last_success).toLocaleTimeString('en-IN', {
+        timeZone: IST_TIME_ZONE,
         hour12: false,
       })
     : null;

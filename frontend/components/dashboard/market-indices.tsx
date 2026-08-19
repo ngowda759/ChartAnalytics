@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { cn, formatNumber, formatPercentage } from '@/lib/utils';
+import { cn, formatNumber, formatPercentage, parseUtc } from '@/lib/utils';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { MarketQuote } from '@/types';
 import { marketApi } from '@/lib/api';
@@ -26,7 +26,7 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     low: Number(q.low ?? 0),
     previousClose: Number(q.previous_close ?? 0),
     volume: Number(q.volume ?? 0),
-    timestamp: q.timestamp ? new Date(String(q.timestamp)) : new Date(),
+    timestamp: q.timestamp ? parseUtc(String(q.timestamp)) : new Date(),
   };
 }
 

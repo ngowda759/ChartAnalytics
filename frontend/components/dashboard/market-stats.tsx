@@ -1,7 +1,7 @@
 'use client';
 
 import { Activity, RefreshCw } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatISTTime } from '@/lib/utils';
 import { marketApi, type MarketStats as MarketStatsData } from '@/lib/api';
 import { useTileQuery } from '@/lib/useTileQuery';
 
@@ -61,7 +61,7 @@ export function MarketStats() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          {tile.updatedAt && `Updated ${new Date(tile.updatedAt).toLocaleTimeString('en-IN')}`}
+          {tile.updatedAt && `Updated ${formatISTTime(tile.updatedAt)} IST`}
         </span>
         {isFallback && (
           <span className="rounded bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-600">

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { optionsApi } from '@/lib/api';
+import { formatISTDateTime } from '@/lib/utils';
 
 interface OptionLeg {
   strike: number;
@@ -139,7 +140,7 @@ export default function OptionsPage() {
 
       {chain && (
         <p className="text-xs text-muted-foreground">
-          Expiry: {chain.expiry} • Updated: {new Date(chain.timestamp).toLocaleString('en-IN')}
+          Expiry: {chain.expiry} • Updated: {formatISTDateTime(chain.timestamp)}
         </p>
       )}
 

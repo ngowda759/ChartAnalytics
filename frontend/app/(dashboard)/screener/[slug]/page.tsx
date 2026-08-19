@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw, Clock } from 'lucide-react';
 import { scannerApi } from '@/lib/api';
+import { formatISTTime } from '@/lib/utils';
 import { ScreenerWidget } from '@/components/dashboard/screener-widget';
 
 const SCREENER_META: Record<string, { title: string; description: string }> = {
@@ -85,7 +86,7 @@ export default function ScreenerDetailPage() {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
           {data.rows.length} stocks match · updated{' '}
-          {new Date(data.last_updated).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+          {formatISTTime(data.last_updated)} IST
         </div>
       )}
 

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { scannerApi } from '@/lib/api';
+import { formatISTTime } from '@/lib/utils';
 
 interface ScanResult {
   id: string;
@@ -100,7 +101,7 @@ export default function ScannerPage() {
             Find trading opportunities in real-time
             {lastScan && (
               <span className="ml-2 text-xs">
-                • Last scan: {lastScan.toLocaleTimeString('en-IN')}
+                • Last scan: {formatISTTime(lastScan)} IST
               </span>
             )}
             {results[0]?.source && (

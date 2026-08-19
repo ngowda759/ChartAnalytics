@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { aiApi } from '@/lib/api';
+import { formatISTTime } from '@/lib/utils';
 
 interface Message {
   id: string;
@@ -117,7 +118,7 @@ export default function AIAssistantPage() {
                     msg.role === 'user' ? 'text-blue-200' : 'text-gray-400'
                   }`}
                 >
-                  {msg.timestamp.toLocaleTimeString()}
+                  {formatISTTime(msg.timestamp)}
                 </p>
               </div>
             </div>

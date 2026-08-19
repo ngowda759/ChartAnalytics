@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { formatISTDateTime } from '@/lib/utils';
 import { RefreshCw, Target, ShieldCheck, TrendingUp, Activity, Filter } from 'lucide-react';
 import {
   decisionSignalsApi,
@@ -167,7 +168,7 @@ export default function DecisionSignalsPage() {
               Source: <span className="capitalize">{data.source}</span>
               {data.is_stale && ' (stale)'}
               {data.generated_at &&
-                ` · generated ${new Date(data.generated_at).toLocaleString('en-IN')}`}
+                ` · generated ${formatISTDateTime(data.generated_at)} IST`}
             </p>
           )}
         </div>

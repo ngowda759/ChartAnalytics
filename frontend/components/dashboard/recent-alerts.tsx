@@ -1,7 +1,7 @@
 'use client';
 
 import { Bell, TrendingUp, AlertTriangle, Activity, RefreshCw } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatISTDate, parseUtc } from '@/lib/utils';
 import { alertsApi } from '@/lib/api';
 import { useTileQuery } from '@/lib/useTileQuery';
 
@@ -69,7 +69,7 @@ export function RecentAlerts() {
     <div className="space-y-3">
       {tile.stale && tile.updatedAt && (
         <p className="text-xs text-muted-foreground">
-          Showing alerts from {formatTime(new Date(tile.updatedAt))} (stale)
+          Showing alerts from {formatTime(tile.updatedAt)} (stale)
         </p>
       )}
       {alerts.map((alert) => {
@@ -99,7 +99,7 @@ export function RecentAlerts() {
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">{alert.symbol}</p>
                 <span className="text-xs text-muted-foreground">
-                  {formatTime(new Date(alert.timestamp))}
+                  {formatTime(alert.timestamp)}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">{alert.message}</p>
@@ -162,9 +162,10 @@ function AlertError({
   );
 }
 
-function formatTime(date: Date): string {
+function formatTime(date: Date | string): string {
+  const parsed = parseUtc(date);
   const now = new Date();
-  const diff = now.getTime() - date.getTime();
+  const diff = now.getTime() - parsed.getTime();
   const minutes = Math.floor(diff / 60000);
 
   if (minutes < 1) return 'Just now';
@@ -173,5 +174,5 @@ function formatTime(date: Date): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
 
-  return date.toLocaleDateString('en-IN');
+  return formatISTDate(parsed);
 }

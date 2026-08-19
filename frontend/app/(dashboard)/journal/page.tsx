@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useJournal } from '@/hooks/useJournal';
+import { IST_TIME_ZONE, parseUtc } from '@/lib/utils';
 
 export default function JournalPage() {
   const { trades, metrics, loading, error } = useJournal();
@@ -23,7 +24,8 @@ export default function JournalPage() {
   };
 
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('en-IN', {
+    return parseUtc(date).toLocaleDateString('en-IN', {
+      timeZone: IST_TIME_ZONE,
       day: '2-digit',
       month: 'short',
       year: 'numeric',

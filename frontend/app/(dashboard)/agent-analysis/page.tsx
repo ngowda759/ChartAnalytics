@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Users, Scale, Target, ShieldAlert, Loader2 } from 'lucide-react';
 import { agentAnalysisApi } from '@/lib/api';
+import { formatISTDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface DebateTurn {
@@ -132,7 +133,7 @@ export default function AgentAnalysisPage() {
                 Source: <span className="capitalize">{data.source}</span>
                 {data.is_stale && ' (stale)'}
                 {data.generated_at &&
-                  ` · generated ${new Date(data.generated_at).toLocaleString('en-IN')}`}
+                  ` · generated ${formatISTDateTime(data.generated_at)} IST`}
               </p>
             )}
           </div>
@@ -281,7 +282,7 @@ function SymbolDetailModal({
               )}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {new Date(result.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+              {formatISTDateTime(result.timestamp)} IST
             </p>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>

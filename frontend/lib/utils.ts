@@ -48,9 +48,41 @@ export function formatVolume(num: number): string {
   return num.toString();
 }
 
+export const IST_TIME_ZONE = 'Asia/Kolkata';
+
+// IST is a fixed UTC+05:30 offset; used to shift UNIX timestamps so
+// lightweight-charts (which renders axis labels in UTC) shows IST.
+export const IST_OFFSET_SECONDS = 5.5 * 60 * 60;
+
+// Backend timestamps are naive UTC (datetime.utcnow()). Parsing them with
+// plain `new Date(s)` treats them as browser-local time; append Z so they
+// are always interpreted as UTC.
+export function parseUtc(date: Date | string): Date {
+  if (date instanceof Date) return date;
+  const s = date.trim();
+  if (/Z$|[+-]\d{2}:?\d{2}$/.test(s)) return new Date(s);
+  return new Date(`${s}Z`);
+}
+
+export function formatISTDateTime(date: Date | string): string {
+  return parseUtc(date).toLocaleString('en-IN', { timeZone: IST_TIME_ZONE });
+}
+
+export function formatISTTime(date: Date | string): string {
+  return parseUtc(date).toLocaleTimeString('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: IST_TIME_ZONE,
+  });
+}
+
+export function formatISTDate(date: Date | string): string {
+  return parseUtc(date).toLocaleDateString('en-IN', { timeZone: IST_TIME_ZONE });
+}
+
 export function formatDate(date: Date | string, format: 'short' | 'long' | 'time' = 'short'): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  
+  const d = parseUtc(date);
+
   switch (format) {
     case 'long':
       return d.toLocaleDateString('en-IN', {
@@ -58,15 +90,16 @@ export function formatDate(date: Date | string, format: 'short' | 'long' | 'time
         year: 'numeric',
         month: 'long',
         day: 'numeric',
+        timeZone: IST_TIME_ZONE,
       });
     case 'time':
       return d.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
-        timeZone: 'Asia/Kolkata',
+        timeZone: IST_TIME_ZONE,
       });
     default:
-      return d.toLocaleDateString('en-IN');
+      return d.toLocaleDateString('en-IN', { timeZone: IST_TIME_ZONE });
   }
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { marketApi } from '@/lib/api';
+import { IST_OFFSET_SECONDS } from '@/lib/utils';
 
 interface MarketChartProps {
   symbol: string;
@@ -198,8 +199,9 @@ async function loadChartData(symbol: string): Promise<{
     if (!error && data && data.length > 0) {
       const seen = new Set<number>();
       for (const c of data) {
-        // Backend timestamps are naive UTC; append Z so JS parses as UTC.
-        const time = Math.floor(new Date(`${c.timestamp}Z`).getTime() / 1000);
+        // Backend timestamps are naive UTC; parse as UTC, then shift to IST
+        // because lightweight-charts renders axis labels in UTC.
+        const time = Math.floor(new Date(`${c.timestamp}Z`).getTime() / 1000) + IST_OFFSET_SECONDS;
         if (Number.isNaN(time) || seen.has(time)) continue;
         seen.add(time);
         candles.push({ time, open: c.open, high: c.high, low: c.low, close: c.close });

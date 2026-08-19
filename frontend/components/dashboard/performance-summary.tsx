@@ -8,7 +8,7 @@ import {
   Activity,
   RefreshCw,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatISTTime } from '@/lib/utils';
 import { journalApi } from '@/lib/api';
 import { useTileQuery } from '@/lib/useTileQuery';
 
@@ -144,7 +144,7 @@ export function PerformanceSummary() {
     <div className="space-y-6">
       {tile.stale && tile.updatedAt && (
         <p className="text-xs text-muted-foreground">
-          Cached • Updated {new Date(tile.updatedAt).toLocaleTimeString('en-IN')} ago
+          Cached • Updated {formatISTTime(tile.updatedAt)} IST ago
         </p>
       )}
       <div className="grid grid-cols-2 gap-4">
