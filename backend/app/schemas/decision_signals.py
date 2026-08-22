@@ -12,6 +12,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.predictions import SwarmPredictionSummary
+
 
 class DecisionAction(str, Enum):
     BUY = "buy"
@@ -49,6 +51,9 @@ class DecisionSignal(BaseModel):
     reasons: List[str] = Field(default_factory=list)
     status: DecisionStatus = DecisionStatus.ACTIVE
     timestamp: datetime
+    # MiroFish swarm prediction for the same symbol, so a signal carries its
+    # forward-looking forecast alongside the rule-based action.
+    prediction: Optional[SwarmPredictionSummary] = None
 
 
 class DecisionSignalListResponse(BaseModel):

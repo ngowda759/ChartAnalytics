@@ -27,12 +27,21 @@ const COLUMN_LABELS: Record<string, string> = {
   'extra.vwap': 'VWAP',
   'extra.rsi': 'RSI',
   'extra.pct_from_high': '% High',
+  'extra.prediction_direction': 'Forecast',
+  'extra.predicted_change_pct': 'Pred %',
+  'extra.prediction_conviction': 'Conviction',
+  'extra.prediction_target': 'Target',
 };
 
-function getExtra(row: ScreenerRow, dotted: string): number | null {
+// Extra fields that hold string metadata (not numeric metrics) — rendered
+// verbatim instead of being coerced to a number.
+const STRING_EXTRA_FIELDS = new Set(['prediction_direction']);
+
+function getExtra(row: ScreenerRow, dotted: string): number | string | null {
   const [, field] = dotted.split('extra.');
   const raw = row.extra?.[field];
   if (raw === null || raw === undefined) return null;
+  if (STRING_EXTRA_FIELDS.has(field)) return String(raw);
   // `extra` mixes numeric metrics and string metadata (e.g. source); only
   // expose numeric values to the numeric accessor.
   const n = Number(raw);
@@ -71,12 +80,14 @@ function buildColumns(keys: string[]): ColumnMeta[] {
 function formatValue(col: ColumnMeta, val: number | string | null | undefined): string {
   if (val === null || val === undefined) return '-';
   if (col.key === 'symbol') return String(val);
+  if (col.key === 'extra.prediction_direction') return String(val);
   const n = Number(val);
-  if (col.key === 'change_percent') {
+  if (!Number.isFinite(n)) return String(val);
+  if (col.key === 'change_percent' || col.key === 'extra.predicted_change_pct') {
     return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
   }
   if (col.key === 'volume') return formatVolume(n);
-  if (col.key === 'ltp' || col.key === 'extra.vwap') {
+  if (col.key === 'ltp' || col.key === 'extra.vwap' || col.key === 'extra.prediction_target') {
     return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (col.key === 'extra.rsi' || col.key === 'extra.volume_factor' || col.key === 'extra.pct_from_high') {
@@ -153,6 +164,7 @@ export function ScreenerWidget({ widget, showChartPreview }: Props) {
       fallback: { label: 'Fallback', className: 'border-yellow-500/40 text-yellow-600' },
       unavailable: { label: 'Unavailable', className: 'border-red-500/40 text-red-600' },
       error: { label: 'Error', className: 'border-red-500/40 text-red-600' },
+      mock: { label: 'Mock', className: 'border-slate-500/40 text-slate-500' },
     };
     const entry = map[s];
     if (!entry) return null;

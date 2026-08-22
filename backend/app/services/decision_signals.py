@@ -51,6 +51,7 @@ def _risk_reward(entry: Optional[float], stop: Optional[float], target: Optional
 
 def _eval_to_signal(idx: int, ev: StrategyEval) -> DecisionSignal:
     from app.services import market_data
+    from app.services import mirofish
 
     rr = _risk_reward(ev.entry, ev.stop_loss, ev.target)
     status = DecisionStatus.ACTIVE if ev.action != DecisionAction.AVOID else DecisionStatus.EXPIRED
@@ -78,6 +79,7 @@ def _eval_to_signal(idx: int, ev: StrategyEval) -> DecisionSignal:
         status=status,
         timestamp=ev.timestamp,
         source=source,
+        prediction=mirofish.summary_for_symbol(ev.symbol),
     )
 
 

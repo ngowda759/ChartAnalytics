@@ -50,7 +50,7 @@ class TestBuildNseDashboardFallback:
 
         widgets, source, warnings = _build()
 
-        assert len(widgets) == 8, "expected the full widget set"
+        assert len(widgets) == 9, "expected the full widget set"
         for w in widgets:
             assert w.rows, f"widget '{w.id}' rendered empty"
             assert w.columns
@@ -135,6 +135,7 @@ class TestBuildNseDashboardFallback:
             "fifty_two_week_low",
             "copy-morning-scanner-for-buy-nr7-based-breakout-8",
             "potential-breakouts",
+            "mirofish-swarm-forecast",
         ]
 
     def test_schema_accepts_string_metadata_in_extra(self):

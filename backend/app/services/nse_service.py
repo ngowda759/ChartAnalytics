@@ -549,6 +549,45 @@ async def _dataset_with_cache(key: str, fn, *args) -> Tuple[List[ScreenerRow], s
     return [], "unavailable", "none"
 
 
+def _swarm_forecast_rows(limit: int = 8) -> Tuple[List[ScreenerRow], str, str]:
+    """Top MiroFish swarm predictions as screener rows.
+
+    Predictions come from the unified market-data resolver, so this widget
+    stays populated even when NSE is down (mock/yfinance path). Returns
+    ``(rows, status, source)`` for the widget's provenance fields.
+    """
+    from app.services import mirofish
+
+    predictions = mirofish.predict_universe(limit=limit)
+    if not predictions or all(p.status == "unavailable" for p in predictions):
+        return [], "unavailable", "none"
+
+    rows: List[ScreenerRow] = []
+    for p in predictions:
+        if p.status == "unavailable":
+            continue
+        rows.append(
+            ScreenerRow(
+                symbol=p.symbol,
+                name=p.name,
+                ltp=p.current_price,
+                change_percent=None,
+                volume=None,
+                extra={
+                    "prediction_direction": p.direction.value,
+                    "predicted_change_pct": p.predicted_change_percent,
+                    "prediction_conviction": p.conviction,
+                    "prediction_target": p.target_price,
+                },
+            )
+        )
+    if not rows:
+        return [], "unavailable", "none"
+    status = "mock" if any(p.status == "mock" for p in predictions) else "live"
+    source = next((p.source for p in predictions if p.status != "unavailable"), "none")
+    return rows, status, source
+
+
 async def build_nse_dashboard() -> Tuple[List[ScreenerWidget], str, List[str]]:
     """Build a dashboard of NSE-backed screener widgets.
 
@@ -760,6 +799,34 @@ async def build_nse_dashboard() -> Tuple[List[ScreenerWidget], str, List[str]]:
         last_updated=_now(),
         status=pbo_st,
         source=pbo_src,
+    ))
+
+    # MiroFish swarm forecast — agent-swarm consensus prediction per symbol,
+    # computed from the unified market-data resolver (works even when NSE is
+    # down; labelled with its own source/status).
+    pred_rows, pred_st, pred_src = _swarm_forecast_rows(8)
+    if pred_st == "unavailable":
+        warnings.append("MiroFish swarm predictions unavailable (market data unavailable)")
+    widgets.append(ScreenerWidget(
+        id="mirofish-swarm-forecast",
+        title="Swarm Forecast (MiroFish)",
+        description=(
+            "MiroFish-style agent-swarm consensus: direction, predicted % "
+            "change and conviction per symbol over a 5-session horizon."
+        ),
+        timeframe="daily",
+        columns=[
+            "symbol",
+            "ltp",
+            "extra.prediction_direction",
+            "extra.predicted_change_pct",
+            "extra.prediction_conviction",
+            "extra.prediction_target",
+        ],
+        rows=pred_rows,
+        last_updated=_now(),
+        status=pred_st,
+        source=pred_src,
     ))
 
     if any_fallback:

@@ -19,6 +19,7 @@ def _reset_caches():
         decision_signals,
         market_data,
         market_service,
+        mirofish,
         trading_agents,
     )
 
@@ -32,6 +33,7 @@ def _reset_caches():
 
     trading_agents.invalidate_analysis_cache()
     decision_signals.invalidate_signals_cache()
+    mirofish.invalidate_prediction_cache()
     yield
 
     market_data.override_market_data_provider(None)
@@ -39,3 +41,4 @@ def _reset_caches():
     market_service._market_service = None
     trading_agents.invalidate_analysis_cache()
     decision_signals.invalidate_signals_cache()
+    mirofish.invalidate_prediction_cache()

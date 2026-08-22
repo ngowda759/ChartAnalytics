@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Zap,
   Users,
+  Fish,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ const navigation = [
   { name: 'Journal', href: '/journal', icon: BookOpen },
   { name: 'Strategies', href: '/strategies', icon: FlaskConical },
   { name: 'Decision Signals', href: '/decision-signals', icon: Zap },
+  { name: 'Predictions', href: '/predictions', icon: Fish },
   { name: 'AI Assistant', href: '/ai-assistant', icon: Bot },
   { name: 'Agent Analysis', href: '/agent-analysis', icon: Users },
   { name: 'Risk', href: '/risk', icon: Shield },

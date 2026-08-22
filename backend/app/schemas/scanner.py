@@ -3,6 +3,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+from app.schemas.predictions import SwarmPredictionSummary
+
 
 class ScanType(str, Enum):
     BREAKOUT = "breakout"
@@ -40,6 +42,8 @@ class ScanResult(BaseModel):
     timestamp: datetime
     source: str = "unavailable"  # yfinance | angel_one | kite | mock | unavailable
     status: str = "unavailable"  # live | cached | mock | unavailable
+    # MiroFish swarm prediction for the scanned symbol.
+    prediction: Optional[SwarmPredictionSummary] = None
 
 
 class ScanSummary(BaseModel):

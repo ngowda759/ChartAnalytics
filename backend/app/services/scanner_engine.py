@@ -256,6 +256,11 @@ def scan_market(
             last = candles[-1]
             details: Dict[str, float] = {"atr": _atr(candles)}
             details.update({k: float(v) for k, v in extra.items()})
+            # MiroFish swarm prediction attached to every scan hit so the
+            # scanner surface carries a forward-looking forecast per symbol.
+            from app.services import mirofish
+
+            prediction = mirofish.summary_for_symbol(meta["symbol"])
             results.append(
                 ScanResult(
                     id=f"{meta['symbol']}_{scan_type.value}_{len(results)}",
@@ -271,6 +276,7 @@ def scan_market(
                     timestamp=now,
                     source=source,
                     status=status,
+                    prediction=prediction,
                 )
             )
     results.sort(key=lambda r: r.confidence, reverse=True)

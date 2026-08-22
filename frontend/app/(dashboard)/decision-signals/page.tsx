@@ -106,6 +106,22 @@ function SignalCard({ signal }: { signal: DecisionSignal }) {
             <Activity className="mr-1 h-3 w-3" />
             {Math.round(signal.confidence * 100)}% match
           </Badge>
+          {signal.prediction && (
+            <Badge
+              variant={
+                signal.prediction.direction === 'bullish'
+                  ? 'bullish'
+                  : signal.prediction.direction === 'bearish'
+                    ? 'bearish'
+                    : 'neutral'
+              }
+              title="MiroFish swarm prediction"
+            >
+              Swarm {signal.prediction.predicted_change_percent >= 0 ? '+' : ''}
+              {signal.prediction.predicted_change_percent.toFixed(2)}% ·{' '}
+              {signal.prediction.conviction}
+            </Badge>
+          )}
         </div>
 
         {signal.reasons.length > 0 && (

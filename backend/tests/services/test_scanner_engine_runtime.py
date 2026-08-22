@@ -174,8 +174,8 @@ class TestNseCacheAndPartialFailure:
             monkeypatch.setattr(nse_service, fn_name, lambda *a, **k: [])
         widgets, _, _ = asyncio.run(nse_service.build_nse_dashboard())
         for w in widgets:
-            assert w.status in ("live", "cached", "fallback", "unavailable", "error")
-            assert w.source in ("nse", "broker", "cache", "synthetic", "none")
+            assert w.status in ("live", "cached", "fallback", "unavailable", "error", "mock")
+            assert w.source in ("nse", "broker", "cache", "synthetic", "none", "mock")
 
 
 # ---------------------------------------------------------------------------

@@ -152,6 +152,54 @@ aggressive/conservative/neutral risk debate → Portfolio Manager.
   cards + watchlist table + detail modal showing every pipeline stage) +
   `agentAnalysisApi` in `frontend/lib/api.ts` + sidebar nav entry.
 
+## MiroFish swarm predictions
+
+A deterministic, offline port of the MiroFish swarm-intelligence prediction
+engine (AGPL-3.0, github.com/666ghj/MiroFish). The same conceptual pipeline
+as the original — seed extraction → swarm generation (persona agents) →
+simulation rounds (social influence / herding) → consensus aggregation →
+prediction report — with no LLM/DB/graph dependencies, so predictions are
+always complete, deterministic (seeded per symbol + hour), and CI-testable.
+
+- Engine: `app/services/mirofish/engine.py` — `extract_seed()` normalizes
+  OHLCV + indicators into a SeedSnapshot (trend/momentum/volume_flow/
+  price_position/drift in [-1,1] + ATR volatility); `build_swarm()` creates
+  24 agents across 6 persona archetypes (momentum, trend, mean-reversion,
+  value, breakout, contrarian); `simulate()` runs 4 opinion-dynamics rounds;
+  aggregation maps consensus → direction/conviction/predicted % change/
+  target price band. NaN/missing closes are dropped; <30 valid candles →
+  truthful `unavailable` prediction.
+- Schemas: `app/schemas/predictions.py` — `SwarmPrediction`,
+  `SwarmPredictionSummary` (compact embed), `SwarmRoundSnapshot`,
+  `PredictionListResponse`.
+- API: `app/api/predictions.py` mounted at `/api/v1/predictions`
+  (`GET /?limit=&refresh=`, `GET /{symbol}`). Registered in `app/main.py`.
+- Cache: per-symbol TTLCache (30 min), reset by the conftest autouse fixture
+  via `mirofish.invalidate_prediction_cache()`.
+- Integrations (every surface carries a prediction):
+  - Decision signals: `DecisionSignal.prediction` (summary) attached in
+    `decision_signals._eval_to_signal()`.
+  - Agent analysis: `AgentAnalysisResult.prediction` attached in
+    `trading_agents/pipeline.py` (also on the unavailable result).
+  - Scanners: `ScanResult.prediction` attached in
+    `scanner_engine.scan_market()`.
+  - Screener widgets: `screener_engine._to_row()` merges
+    `extra.prediction_direction / predicted_change_pct /
+    prediction_conviction / prediction_target` into every row; screener
+    widget columns include them.
+  - Scan dashboard: `nse_service._swarm_forecast_rows()` adds the
+    `mirofish-swarm-forecast` widget (9 widgets total). NOTE: widget
+    status/source vocab now includes `mock` (test
+    `test_widget_status_source_fields_present` + frontend badge map updated).
+- Frontend: `frontend/app/(dashboard)/predictions/page.tsx` (cards + detail
+  modal with per-round swarm bars) + `predictionsApi` in `lib/api.ts` +
+  sidebar entry (Fish icon). `screener-widget.tsx` renders string extras
+  (`STRING_EXTRA_FIELDS`) — `extra.prediction_direction` is a string column.
+  Decision-signal cards and the agent-analysis table/modal show the swarm
+  badge.
+- Tests: `backend/tests/services/test_mirofish.py` (engine determinism,
+  API, NaN regression, all integration surfaces).
+
 ## Live market-data provider (yfinance default)
 
 The app MUST use a real market-data provider in production; the Mock
