@@ -23,7 +23,7 @@ export default function JournalPage() {
     }).format(value);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (date: Date | string) => {
     return parseUtc(date).toLocaleDateString('en-IN', {
       timeZone: IST_TIME_ZONE,
       day: '2-digit',
@@ -87,14 +87,24 @@ export default function JournalPage() {
           <MetricCard title="Avg Win" value={formatCurrency(metrics.averageWin)} color="green" />
           <MetricCard title="Avg Loss" value={formatCurrency(metrics.averageLoss)} color="red" />
           <MetricCard title="Profit Factor" value={metrics.profitFactor.toFixed(2)} />
-          <MetricCard title="Sharpe Ratio" value={metrics.sharpeRatio.toFixed(2)} />
+          <MetricCard
+            title="Sharpe Ratio"
+            value={metrics.sharpeRatio !== null ? metrics.sharpeRatio.toFixed(2) : 'N/A'}
+          />
           <MetricCard
             title="Max Drawdown"
-            value={`${metrics.maxDrawdownPercent.toFixed(1)}%`}
+            value={
+              metrics.maxDrawdownPercent !== null
+                ? `${metrics.maxDrawdownPercent.toFixed(1)}%`
+                : 'N/A'
+            }
             color="red"
           />
           <MetricCard title="Expectancy" value={formatCurrency(metrics.expectancy)} />
-          <MetricCard title="Avg R:R" value={`${metrics.avgRr.toFixed(2)}:1`} />
+          <MetricCard
+            title="Avg R:R"
+            value={metrics.avgRr !== null ? `${metrics.avgRr.toFixed(2)}:1` : 'N/A'}
+          />
         </div>
       )}
 

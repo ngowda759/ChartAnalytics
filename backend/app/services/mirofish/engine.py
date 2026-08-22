@@ -16,6 +16,7 @@ are stable within an hour, never empty, and CI-testable. An LLM can be wired
 in later behind a key; the deterministic path stays the default + fallback.
 """
 
+import hashlib
 import math
 import random
 from dataclasses import dataclass
@@ -170,8 +171,11 @@ _PERSONAS: List[Tuple[str, Dict[str, float], float]] = [
 
 
 def _seed_for(symbol: str) -> int:
+    # SHA-256 (not builtin hash()) so swarm generation is reproducible across
+    # processes/Python versions; builtin string hash is salted per process.
     hour_salt = datetime.utcnow().strftime("%Y%m%d%H")
-    return abs(hash(f"mirofish:{symbol}:{hour_salt}")) % (2**31)
+    digest = hashlib.sha256(f"mirofish:{symbol}:{hour_salt}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") % (2**31)
 
 
 def build_swarm(symbol: str, size: int = SWARM_SIZE) -> List[SwarmAgent]:

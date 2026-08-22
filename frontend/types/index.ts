@@ -226,12 +226,14 @@ export interface PerformanceMetrics {
   averageWin: number;
   averageLoss: number;
   profitFactor: number;
-  sharpeRatio: number;
-  maxDrawdown: number;
-  maxDrawdownPercent: number;
+  // Truthfully null when not derivable from a flat trade list — the backend
+  // never fabricates these, so the UI renders N/A instead of crashing.
+  sharpeRatio: number | null;
+  maxDrawdown: number | null;
+  maxDrawdownPercent: number | null;
   totalPnl: number;
   expectancy: number;
-  avgRr: number;
+  avgRr: number | null;
   monthlyReturns: MonthlyReturn[];
 }
 

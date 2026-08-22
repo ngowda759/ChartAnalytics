@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
+import hashlib
+import math
 import random
 
 from app.schemas.scanner import ScreenerRow, ScreenerWidget
@@ -60,9 +62,16 @@ _UNIVERSE = [
 
 
 def _seed_for(symbol: str) -> int:
-    """Stable per-symbol seed, refreshed hourly so auto-refresh shows drift."""
+    """Stable per-symbol seed, refreshed hourly so auto-refresh shows drift.
+
+    Uses SHA-256 rather than the builtin ``hash()`` so the seed (and hence
+    the entire synthetic series) is reproducible across processes, machines
+    and Python versions — ``hash()`` is salted per process for strings, which
+    made mock-mode data change between CI runs.
+    """
     hour_salt = datetime.utcnow().strftime("%Y%m%d%H")
-    return abs(hash(f"{symbol}:{hour_salt}")) % (2**31)
+    digest = hashlib.sha256(f"{symbol}:{hour_salt}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") % (2**31)
 
 
 def _generate_ohlc(symbol: str, base: float, days: int = 260) -> List[Candle]:
@@ -101,13 +110,28 @@ def _meta_for(symbol: str) -> Optional[Dict]:
     return next((m for m in _UNIVERSE if m["symbol"] == symbol), None)
 
 
+def _sanitize_candles(candles: Optional[List[Candle]]) -> Optional[List[Candle]]:
+    """Drop rows with missing/NaN closes (halted sessions, bad provider rows).
+
+    Providers occasionally emit OHLCV rows whose close is NaN; letting them
+    through propagates NaN into every downstream computation (indicators,
+    scanner prices, agent-analyst scores) and eventually crashes pydantic
+    serialization or raises ``ValueError: cannot convert float NaN to
+    integer``. Sanitizing here — the single resolver every surface reads
+    through — guarantees all consumers see only finite closes.
+    """
+    valid = [c for c in (candles or []) if c.close is not None and math.isfinite(c.close)]
+    return valid or None
+
+
 def candles_for(symbol: str, interval: str = "1d", limit: int = 260) -> Tuple[Optional[List[Candle]], str]:
     """Unified candle resolver used by every scanner/signal/agent.
 
     Returns ``(candles, source)``. Real OHLCV is fetched through the unified
     market-data service; only the explicit mock/dev provider returns synthetic
     candles. On a real-data failure returns ``(None, "unavailable")`` so the
-    caller surfaces a truthful state instead of fabricating a series.
+    caller surfaces a truthful state instead of fabricating a series. Rows
+    with missing/NaN closes are dropped before returning.
     """
     from app.services import market_data
 
@@ -115,7 +139,8 @@ def candles_for(symbol: str, interval: str = "1d", limit: int = 260) -> Tuple[Op
         meta = _meta_for(symbol)
         base = meta["base"] if meta else 1000.0
         return _generate_ohlc(symbol, base, days=limit), market_data.SOURCE_MOCK
-    return market_data.get_real_candles(symbol, interval=interval, limit=limit)
+    candles, src = market_data.get_real_candles(symbol, interval=interval, limit=limit)
+    return _sanitize_candles(candles), src
 
 
 def _sma(values: List[float], period: int, idx: int) -> Optional[float]:

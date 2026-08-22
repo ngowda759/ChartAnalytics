@@ -1,6 +1,7 @@
 """Tests for the TradingAgents-style agent analysis pipeline."""
 
 from datetime import datetime
+import math
 
 import pytest
 import sys
@@ -121,6 +122,59 @@ def test_analysts_with_insufficient_history_dont_crash():
     ]
     for a in run_analysts(few):
         assert 0 <= a.score <= 100
+
+
+def test_candles_for_drops_nan_close_rows(monkeypatch):
+    """Regression: yfinance occasionally returns OHLCV rows with NaN closes
+    (halted sessions). Those rows must be dropped at the unified resolver so
+    downstream analysts never hit `ValueError: cannot convert float NaN to
+    integer` (the production agent-analysis 500)."""
+    from app.services import market_data, screener_engine
+    from app.services.screener_engine import Candle
+    from datetime import datetime as dt
+
+    candles = [
+        Candle(
+            date=dt.utcnow(),
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=(100.0 if i % 7 else float("nan")),
+            volume=1000,
+        )
+        for i in range(60)
+    ]
+    monkeypatch.setattr(market_data, "is_mock_mode", lambda: False)
+    monkeypatch.setattr(
+        market_data, "get_real_candles", lambda *a, **k: (candles, "yfinance")
+    )
+
+    resolved, src = screener_engine.candles_for("RELIANCE")
+    assert src == "yfinance"
+    assert resolved is not None
+    assert len(resolved) < 60, "NaN rows must be dropped"
+    assert all(c.close is not None and math.isfinite(c.close) for c in resolved)
+
+
+def test_candles_for_returns_none_when_all_closes_nan(monkeypatch):
+    """A symbol with only NaN closes yields (None, source) -> callers surface
+    a truthful unavailable state instead of crashing."""
+    from app.services import market_data, screener_engine
+    from app.services.screener_engine import Candle
+    from datetime import datetime as dt
+
+    candles = [
+        Candle(date=dt.utcnow(), open=1.0, high=1.0, low=1.0, close=float("nan"), volume=100)
+        for _ in range(60)
+    ]
+    monkeypatch.setattr(market_data, "is_mock_mode", lambda: False)
+    monkeypatch.setattr(
+        market_data, "get_real_candles", lambda *a, **k: (candles, "yfinance")
+    )
+
+    resolved, src = screener_engine.candles_for("PREMIERENE")
+    assert resolved is None
+    assert src == "yfinance"
 
 
 # --- debate ---------------------------------------------------------------
