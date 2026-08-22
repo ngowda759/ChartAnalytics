@@ -13,6 +13,7 @@ row is backed by a real calculation.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -29,10 +30,17 @@ from app.services import indicators
 from app.services.screener_engine import Candle, candles_for, _meta_for, _UNIVERSE
 
 
+def _sanitize_candles(candles: Optional[List[Candle]]) -> Optional[List[Candle]]:
+    """Drop rows with missing/NaN closes (halted sessions, bad provider rows)
+    so downstream math never propagates NaN into price/change_percent."""
+    valid = [c for c in (candles or []) if c.close is not None and math.isfinite(c.close)]
+    return valid or None
+
+
 def _candles_for(symbol: str) -> Optional[List[Candle]]:
     """Back-compat wrapper: real candles via the unified resolver, else None."""
     candles, _src = candles_for(symbol)
-    return candles
+    return _sanitize_candles(candles)
 
 
 def _source_status(src: str) -> Tuple[str, str]:
@@ -240,6 +248,7 @@ def scan_market(
     now = datetime.utcnow()
     for meta in _UNIVERSE:
         candles, src = candles_for(meta["symbol"])
+        candles = _sanitize_candles(candles)
         if not candles:
             continue
         source, status = _source_status(src)
@@ -289,6 +298,7 @@ def scan_breakouts(limit: int = 20) -> List[BreakoutSignal]:
     results: List[BreakoutSignal] = []
     for meta in _UNIVERSE:
         candles, src = candles_for(meta["symbol"])
+        candles = _sanitize_candles(candles)
         if not candles or len(candles) < 21:
             continue
         source, status = _source_status(src)
@@ -342,6 +352,7 @@ def scan_ema_crosses(limit: int = 20) -> List[EMACrossSignal]:
     results: List[EMACrossSignal] = []
     for meta in _UNIVERSE:
         candles, src = candles_for(meta["symbol"])
+        candles = _sanitize_candles(candles)
         if not candles or len(candles) < 30:
             continue
         source, status = _source_status(src)
@@ -388,6 +399,7 @@ def scan_volume_spikes(limit: int = 20) -> List[VolumeSignal]:
     results: List[VolumeSignal] = []
     for meta in _UNIVERSE:
         candles, src = candles_for(meta["symbol"])
+        candles = _sanitize_candles(candles)
         if not candles or len(candles) < 21:
             continue
         source, status = _source_status(src)
@@ -458,6 +470,7 @@ def scan_oi_buildup(limit: int = 20) -> List[OISignal]:
 
     for meta in _UNIVERSE:
         candles, src = candles_for(meta["symbol"])
+        candles = _sanitize_candles(candles)
         if not candles or len(candles) < 30:
             continue
         source, status = _source_status(src)

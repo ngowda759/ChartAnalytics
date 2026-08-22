@@ -15,8 +15,10 @@ interface ScanResult {
   scan_type: string;
   direction: 'bullish' | 'bearish' | 'neutral';
   confidence: number;
-  price: number;
-  change_percent: number;
+  // Backend omits these (JSON null) when the provider has no valid price for
+  // the symbol — render N/A instead of crashing on .toFixed.
+  price: number | null;
+  change_percent: number | null;
   volume_ratio?: number | null;
   details?: {
     atr?: number | null;
@@ -200,10 +202,16 @@ export default function ScannerPage() {
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-right">
-                      <p className="font-semibold">₹{formatINR(r.price)}</p>
-                      <p className={`text-sm ${r.change_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {r.change_percent >= 0 ? '+' : ''}{r.change_percent.toFixed(2)}%
+                      <p className="font-semibold">
+                        {r.price != null ? `₹${formatINR(r.price)}` : 'N/A'}
                       </p>
+                      {r.change_percent != null ? (
+                        <p className={`text-sm ${r.change_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {r.change_percent >= 0 ? '+' : ''}{r.change_percent.toFixed(2)}%
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">N/A</p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Vol Ratio</p>
