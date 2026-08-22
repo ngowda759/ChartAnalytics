@@ -9,6 +9,7 @@ Covers:
 - Per-widget status/source provenance.
 """
 import asyncio
+import math
 
 import pytest
 from fastapi.testclient import TestClient
@@ -69,6 +70,65 @@ class TestScannerDeterminism:
         assert "random.uniform" not in src
         assert "random.choice" not in src
         assert "random.randint" not in src
+
+    def test_nan_close_candles_are_dropped(self, monkeypatch):
+        """Providers sometimes return rows with NaN closes (halted sessions);
+        those rows must be dropped so results never carry NaN/null prices."""
+        from datetime import datetime
+
+        from app.services.screener_engine import Candle
+
+        nan_candles = [
+            Candle(
+                date=datetime.utcnow(),
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=float("nan"),
+                volume=1000,
+            )
+            for _ in range(60)
+        ]
+        monkeypatch.setattr(
+            scanner_engine, "candles_for", lambda symbol, **kw: (nan_candles, "yfinance")
+        )
+        results = scanner_engine.scan_market(min_confidence=0.0, limit=100)
+        assert results == [], "symbols with only NaN closes must be skipped"
+
+    def test_scan_results_never_have_nan_prices(self):
+        results = scanner_engine.scan_market(min_confidence=0.0, limit=100)
+        for r in results:
+            assert math.isfinite(r.price)
+            assert math.isfinite(r.change_percent)
+
+    def test_mixed_nan_candles_use_valid_tail(self, monkeypatch):
+        """A symbol with some NaN rows still scans on the valid tail."""
+        from datetime import datetime, timedelta
+
+        from app.services.screener_engine import Candle
+
+        candles = []
+        for i in range(40):
+            close = 100.0 + i * 0.5
+            if i in (0, 5):
+                close = float("nan")
+            candles.append(
+                Candle(
+                    date=datetime.utcnow() - timedelta(days=40 - i),
+                    open=close if math.isfinite(close) else 100.0,
+                    high=(close if math.isfinite(close) else 100.0) + 1,
+                    low=(close if math.isfinite(close) else 100.0) - 1,
+                    close=close,
+                    volume=1000,
+                )
+            )
+        monkeypatch.setattr(
+            scanner_engine, "candles_for", lambda symbol, **kw: (candles, "yfinance")
+        )
+        results = scanner_engine.scan_market(min_confidence=0.0, limit=100)
+        for r in results:
+            assert math.isfinite(r.price)
+            assert math.isfinite(r.change_percent)
 
 
 # ---------------------------------------------------------------------------
