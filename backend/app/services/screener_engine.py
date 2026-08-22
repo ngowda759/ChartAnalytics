@@ -215,7 +215,21 @@ def _to_row(meta: Dict, candles: List[Candle]) -> ScreenerRow:
         ltp=last.close,
         change_percent=change_percent,
         volume=last.volume,
+        extra=_prediction_extra(meta["symbol"]),
     )
+
+
+def _prediction_extra(symbol: str) -> Dict:
+    """MiroFish swarm prediction fields merged into the screener row's extra."""
+    from app.services import mirofish
+
+    p = mirofish.predict_symbol(symbol)
+    return {
+        "prediction_direction": p.direction.value,
+        "predicted_change_pct": p.predicted_change_percent,
+        "prediction_conviction": p.conviction,
+        "prediction_target": p.target_price,
+    }
 
 
 def _run_scan(predicate: Callable[[List[Candle]], bool], limit: int = 25) -> List[ScreenerRow]:
@@ -266,7 +280,15 @@ def build_screener_widget(slug: str, limit: int = 25) -> Optional[ScreenerWidget
         title=spec["title"],
         description=spec["description"],
         timeframe=spec["timeframe"],
-        columns=["symbol", "change_percent", "ltp", "volume"],
+        columns=[
+            "symbol",
+            "change_percent",
+            "ltp",
+            "volume",
+            "extra.prediction_direction",
+            "extra.predicted_change_pct",
+            "extra.prediction_conviction",
+        ],
         rows=rows,
         last_updated=datetime.utcnow(),
     )

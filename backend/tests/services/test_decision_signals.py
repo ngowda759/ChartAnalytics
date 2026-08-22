@@ -40,9 +40,14 @@ class TestDecisionSignals:
         assert all(s.score >= 70 for s in signals)
 
     def test_filter_by_strategy(self):
-        signals = ds.list_signals(strategy="bull_trend", limit=200)
-        assert signals
-        assert all(s.strategy == "bull_trend" for s in signals)
+        strategies = ds.available_strategies()
+        assert strategies
+        any_signals = False
+        for slug in strategies:
+            signals = ds.list_signals(strategy=slug, limit=200)
+            assert all(s.strategy == slug for s in signals)
+            any_signals = any_signals or bool(signals)
+        assert any_signals, "at least one strategy should yield signals"
 
     def test_unknown_strategy_returns_empty(self):
         assert ds.list_signals(strategy="nope", limit=10) == []

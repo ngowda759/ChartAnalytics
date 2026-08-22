@@ -20,6 +20,7 @@ from app.api import (
     decision_signals,
     agent_analysis,
     system,
+    predictions,
 )
 
 # Configure structured logging
@@ -157,6 +158,11 @@ app.include_router(
     agent_analysis.router,
     prefix="/api/v1/agent-analysis",
     tags=["Agent Analysis"],
+)
+app.include_router(
+    predictions.router,
+    prefix="/api/v1/predictions",
+    tags=["MiroFish Predictions"],
 )
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
 

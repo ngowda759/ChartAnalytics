@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Users, Scale, Target, ShieldAlert, Loader2 } from 'lucide-react';
+import { RefreshCw, Users, Scale, Target, ShieldAlert, Loader2, Fish } from 'lucide-react';
 import { agentAnalysisApi } from '@/lib/api';
 import { formatISTDateTime } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -46,6 +46,14 @@ interface PortfolioDecision {
   time_horizon: string | null;
 }
 
+interface SwarmPredictionSummary {
+  direction: 'bullish' | 'bearish' | 'neutral';
+  conviction: number;
+  predicted_change_percent: number;
+  target_price?: number | null;
+  confidence: number;
+}
+
 interface DebateResult {
   turns: DebateTurn[];
   winner: string;
@@ -63,6 +71,7 @@ interface AgentAnalysisResult {
   risk_debate: DebateResult;
   final_decision: PortfolioDecision;
   confidence: number;
+  prediction?: SwarmPredictionSummary | null;
 }
 
 interface AgentAnalysisList {
@@ -87,6 +96,12 @@ function actionVariant(action: string) {
   if (action === 'Buy') return 'success';
   if (action === 'Sell') return 'destructive';
   return 'secondary';
+}
+
+function predictionVariant(direction: string): 'bullish' | 'bearish' | 'neutral' {
+  if (direction === 'bullish') return 'bullish';
+  if (direction === 'bearish') return 'bearish';
+  return 'neutral';
 }
 
 function fmt(v: number | null | undefined) {
@@ -200,6 +215,7 @@ export default function AgentAnalysisPage() {
                       <th className="px-4 py-2 font-medium">Rating</th>
                       <th className="px-4 py-2 font-medium">Action</th>
                       <th className="px-4 py-2 font-medium">Conf.</th>
+                      <th className="px-4 py-2 font-medium">Swarm</th>
                       <th className="px-4 py-2 font-medium">Target</th>
                       <th className="px-4 py-2 font-medium">Horizon</th>
                     </tr>
@@ -231,6 +247,17 @@ export default function AgentAnalysisPage() {
                         </td>
                         <td className="px-4 py-2">
                           {(r.confidence * 100).toFixed(0)}%
+                        </td>
+                        <td className="px-4 py-2">
+                          {r.prediction ? (
+                            <Badge variant={predictionVariant(r.prediction.direction)}>
+                              {r.prediction.predicted_change_percent >= 0 ? '+' : ''}
+                              {r.prediction.predicted_change_percent.toFixed(2)}% ·{' '}
+                              {r.prediction.conviction}
+                            </Badge>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           {fmt(r.final_decision.price_target)}
@@ -386,6 +413,38 @@ function SymbolDetailModal({
             <Field label="Time Horizon" value={result.final_decision.time_horizon ?? '—'} />
           </div>
         </Section>
+
+        {result.prediction && (
+          <Section title="Swarm Forecast (MiroFish)" icon={<Fish className="h-4 w-4" />}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={predictionVariant(result.prediction.direction)}>
+                {result.prediction.direction}
+              </Badge>
+              <Badge variant="outline">
+                Conviction {result.prediction.conviction}/100
+              </Badge>
+              <Badge variant="outline">
+                {result.prediction.predicted_change_percent >= 0 ? '+' : ''}
+                {result.prediction.predicted_change_percent.toFixed(2)}% expected
+              </Badge>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-2">
+              <Field
+                label="Swarm Target"
+                value={
+                  result.prediction.target_price !== null &&
+                  result.prediction.target_price !== undefined
+                    ? fmt(result.prediction.target_price)
+                    : '—'
+                }
+              />
+              <Field
+                label="Swarm Confidence"
+                value={`${Math.round(result.prediction.confidence * 100)}%`}
+              />
+            </div>
+          </Section>
+        )}
 
         <p className="mt-4 text-[10px] text-muted-foreground">
           Derived from the TradingAgents-style deterministic pipeline

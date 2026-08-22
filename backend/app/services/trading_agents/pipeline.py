@@ -155,6 +155,12 @@ def analyze_symbol(symbol: str, name: Optional[str] = None, base: Optional[float
     risk = risk_debate(raw_analysts, composite, trader.action.value)
     decision = _final_decision(composite, risk.winner, plan, candles)
 
+    # MiroFish swarm prediction: the forward-looking stage appended to the
+    # pipeline — what the agent swarm expects next for this symbol.
+    from app.services import mirofish
+
+    prediction = mirofish.summary_for_symbol(symbol)
+
     analysts_out = [
         AnalystReport(
             role=a.role, summary=a.summary, score=a.score, key_points=a.key_points
@@ -188,6 +194,7 @@ def analyze_symbol(symbol: str, name: Optional[str] = None, base: Optional[float
         source=_src_for_agent(),
         data_timestamp=now,
         analysis_timestamp=now,
+        prediction=prediction,
     )
 
 
@@ -200,6 +207,8 @@ def _src_for_agent() -> str:
 
 def _unavailable_agent_result(symbol: str, name: Optional[str]) -> AgentAnalysisResult:
     """Truthful result when real market data could not be fetched."""
+    from app.schemas.predictions import SwarmDirection, SwarmPredictionSummary
+
     now = datetime.utcnow()
     empty_debate = DebateResult(turns=[], winner="draw", summary="Market data unavailable; debate skipped.")
     return AgentAnalysisResult(
@@ -229,6 +238,12 @@ def _unavailable_agent_result(symbol: str, name: Optional[str]) -> AgentAnalysis
         source="unavailable",
         data_timestamp=now,
         analysis_timestamp=now,
+        prediction=SwarmPredictionSummary(
+            direction=SwarmDirection.NEUTRAL,
+            conviction=0,
+            predicted_change_percent=0.0,
+            confidence=0.0,
+        ),
     )
 
 

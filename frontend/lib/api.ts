@@ -61,8 +61,8 @@ export interface ScreenerWidget {
   last_updated: string;
   // Per-widget provenance added by the runtime repair: lets the UI render
   // live / cached / fallback / unavailable distinctly.
-  status?: 'live' | 'cached' | 'fallback' | 'unavailable' | 'error';
-  source?: 'nse' | 'broker' | 'cache' | 'synthetic' | 'none';
+  status?: 'live' | 'cached' | 'fallback' | 'unavailable' | 'error' | 'mock';
+  source?: 'nse' | 'broker' | 'cache' | 'synthetic' | 'none' | 'mock';
   error?: string | null;
 }
 
@@ -383,6 +383,73 @@ export const strategiesApi = {
 // Decision Signals API
 export type DecisionAction = 'buy' | 'hold' | 'avoid';
 
+// MiroFish swarm prediction (deterministic offline port of the MiroFish
+// swarm-intelligence engine) — attached to signals, scans and agent analysis.
+export type SwarmDirection = 'bullish' | 'bearish' | 'neutral';
+
+export interface SwarmPredictionSummary {
+  direction: SwarmDirection;
+  conviction: number;
+  predicted_change_percent: number;
+  target_price?: number | null;
+  confidence: number;
+}
+
+export interface SwarmRoundSnapshot {
+  round: number;
+  bullish_pct: number;
+  bearish_pct: number;
+  neutral_pct: number;
+  consensus: number;
+}
+
+export interface SwarmPrediction {
+  symbol: string;
+  name?: string | null;
+  direction: SwarmDirection;
+  conviction: number;
+  predicted_change_percent: number;
+  current_price?: number | null;
+  target_price?: number | null;
+  target_low?: number | null;
+  target_high?: number | null;
+  horizon: string;
+  confidence: number;
+  agents_total: number;
+  agents_bullish: number;
+  agents_bearish: number;
+  agents_neutral: number;
+  rounds: SwarmRoundSnapshot[];
+  key_drivers: string[];
+  report: string;
+  timestamp: string;
+  source: string;
+  status: string;
+}
+
+export interface PredictionListResponse {
+  total: number;
+  bullish_count: number;
+  bearish_count: number;
+  neutral_count: number;
+  results: SwarmPrediction[];
+  generated_at: string;
+  data_timestamp?: string | null;
+  source: string;
+  is_stale: boolean;
+}
+
+export const predictionsApi = {
+  list: (limit = 25, refresh = false) =>
+    fetchApi<PredictionListResponse>(
+      `/predictions?limit=${limit}${refresh ? '&refresh=true' : ''}`
+    ),
+  get: (symbol: string, refresh = false) =>
+    fetchApi<SwarmPrediction>(
+      `/predictions/${encodeURIComponent(symbol)}${refresh ? '?refresh=true' : ''}`
+    ),
+};
+
 export interface DecisionSignal {
   id: string;
   symbol: string;
@@ -401,6 +468,7 @@ export interface DecisionSignal {
   reasons: string[];
   status: string;
   timestamp: string;
+  prediction?: SwarmPredictionSummary | null;
 }
 
 export interface DecisionSignalListResponse {
@@ -506,5 +574,6 @@ export default {
   strategies: strategiesApi,
   decisionSignals: decisionSignalsApi,
   agentAnalysis: agentAnalysisApi,
+  predictions: predictionsApi,
   system: systemApi,
 };

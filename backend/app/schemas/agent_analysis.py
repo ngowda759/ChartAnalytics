@@ -13,6 +13,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.predictions import SwarmPredictionSummary
+
 
 class PortfolioRating(str, Enum):
     """5-tier rating used by the Research Manager and Portfolio Manager."""
@@ -111,6 +113,9 @@ class AgentAnalysisResult(BaseModel):
     is_stale: bool = False
     data_timestamp: Optional[datetime] = None
     analysis_timestamp: Optional[datetime] = None
+    # MiroFish swarm prediction appended as the forward-looking stage of the
+    # pipeline (what the swarm expects next, vs the pipeline's current call).
+    prediction: Optional[SwarmPredictionSummary] = None
 
 
 class AgentAnalysisListResponse(BaseModel):
