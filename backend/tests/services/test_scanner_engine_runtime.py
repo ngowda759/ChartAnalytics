@@ -73,9 +73,11 @@ class TestScannerDeterminism:
 
     def test_nan_close_candles_are_dropped(self, monkeypatch):
         """Providers sometimes return rows with NaN closes (halted sessions);
-        those rows must be dropped so results never carry NaN/null prices."""
+        those rows are dropped at the unified resolver so the scanner never
+        computes on corrupt data."""
         from datetime import datetime
 
+        from app.services import market_data
         from app.services.screener_engine import Candle
 
         nan_candles = [
@@ -89,8 +91,9 @@ class TestScannerDeterminism:
             )
             for _ in range(60)
         ]
+        monkeypatch.setattr(market_data, "is_mock_mode", lambda: False)
         monkeypatch.setattr(
-            scanner_engine, "candles_for", lambda symbol, **kw: (nan_candles, "yfinance")
+            market_data, "get_real_candles", lambda *a, **k: (nan_candles, "yfinance")
         )
         results = scanner_engine.scan_market(min_confidence=0.0, limit=100)
         assert results == [], "symbols with only NaN closes must be skipped"
@@ -105,6 +108,7 @@ class TestScannerDeterminism:
         """A symbol with some NaN rows still scans on the valid tail."""
         from datetime import datetime, timedelta
 
+        from app.services import market_data
         from app.services.screener_engine import Candle
 
         candles = []
@@ -122,8 +126,9 @@ class TestScannerDeterminism:
                     volume=1000,
                 )
             )
+        monkeypatch.setattr(market_data, "is_mock_mode", lambda: False)
         monkeypatch.setattr(
-            scanner_engine, "candles_for", lambda symbol, **kw: (candles, "yfinance")
+            market_data, "get_real_candles", lambda *a, **k: (candles, "yfinance")
         )
         results = scanner_engine.scan_market(min_confidence=0.0, limit=100)
         for r in results:

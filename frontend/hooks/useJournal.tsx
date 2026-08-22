@@ -2,7 +2,70 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/lib/api';
-import { Trade, PerformanceMetrics } from '@/types';
+import { Trade, PerformanceMetrics, MonthlyReturn } from '@/types';
+
+// Backend returns snake_case (FastAPI/pydantic); the app uses camelCase.
+// Nullable metric fields (sharpe/drawdown/avg_rr) are truthfully null when
+// not derivable from the trade list — map them through as null, never 0.
+function mapMonthlyReturn(raw: any): MonthlyReturn {
+  return {
+    month: raw?.month ?? '',
+    return: raw?.return ?? 0,
+    trades: raw?.trades ?? 0,
+  };
+}
+
+function toPerformanceMetrics(raw: any): PerformanceMetrics | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const num = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const numOrNull = (v: any) =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+  return {
+    totalTrades: num(raw.total_trades ?? raw.totalTrades),
+    winningTrades: num(raw.winning_trades ?? raw.winningTrades),
+    losingTrades: num(raw.losing_trades ?? raw.losingTrades),
+    winRate: num(raw.win_rate ?? raw.winRate),
+    averageWin: num(raw.average_win ?? raw.averageWin),
+    averageLoss: num(raw.average_loss ?? raw.averageLoss),
+    profitFactor: num(raw.profit_factor ?? raw.profitFactor),
+    sharpeRatio: numOrNull(raw.sharpe_ratio ?? raw.sharpeRatio),
+    maxDrawdown: numOrNull(raw.max_drawdown ?? raw.maxDrawdown),
+    maxDrawdownPercent: numOrNull(
+      raw.max_drawdown_percent ?? raw.maxDrawdownPercent
+    ),
+    totalPnl: num(raw.total_pnl ?? raw.totalPnl),
+    expectancy: num(raw.expectancy),
+    avgRr: numOrNull(raw.avg_rr ?? raw.avgRr),
+    monthlyReturns: Array.isArray(raw.monthly_returns ?? raw.monthlyReturns)
+      ? (raw.monthly_returns ?? raw.monthlyReturns).map(mapMonthlyReturn)
+      : [],
+  };
+}
+
+// Backend trades are snake_case; map the fields the UI touches so rows
+// never read undefined (entry.price, createdAt, userId, ...).
+function toTrade(raw: any): Trade {
+  const entry = raw?.entry ?? {};
+  const exit = raw?.exit ?? undefined;
+  return {
+    ...raw,
+    userId: raw?.user_id ?? raw?.userId ?? '',
+    entry: {
+      price: entry.price ?? 0,
+      quantity: entry.quantity ?? 0,
+      timestamp: entry.timestamp ?? null,
+    },
+    exit: exit
+      ? {
+          price: exit.price ?? 0,
+          quantity: exit.quantity ?? 0,
+          timestamp: exit.timestamp ?? null,
+        }
+      : undefined,
+    createdAt: raw?.created_at ?? raw?.createdAt ?? '',
+    updatedAt: raw?.updated_at ?? raw?.updatedAt ?? '',
+  } as Trade;
+}
 
 export function useJournal() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -16,7 +79,7 @@ export function useJournal() {
     if (response.error) {
       setError(response.error);
     } else {
-      setTrades(response.data || []);
+      setTrades((response.data || []).map(toTrade));
     }
     setLoading(false);
   }, []);
@@ -24,7 +87,7 @@ export function useJournal() {
   const fetchMetrics = useCallback(async () => {
     const response = await api.journal.getPerformance();
     if (!response.error) {
-      setMetrics(response.data);
+      setMetrics(toPerformanceMetrics(response.data));
     }
   }, []);
 
