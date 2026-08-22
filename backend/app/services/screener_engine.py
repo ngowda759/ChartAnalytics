@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
+import hashlib
 import math
 import random
 
@@ -61,9 +62,16 @@ _UNIVERSE = [
 
 
 def _seed_for(symbol: str) -> int:
-    """Stable per-symbol seed, refreshed hourly so auto-refresh shows drift."""
+    """Stable per-symbol seed, refreshed hourly so auto-refresh shows drift.
+
+    Uses SHA-256 rather than the builtin ``hash()`` so the seed (and hence
+    the entire synthetic series) is reproducible across processes, machines
+    and Python versions — ``hash()`` is salted per process for strings, which
+    made mock-mode data change between CI runs.
+    """
     hour_salt = datetime.utcnow().strftime("%Y%m%d%H")
-    return abs(hash(f"{symbol}:{hour_salt}")) % (2**31)
+    digest = hashlib.sha256(f"{symbol}:{hour_salt}".encode()).digest()
+    return int.from_bytes(digest[:4], "big") % (2**31)
 
 
 def _generate_ohlc(symbol: str, base: float, days: int = 260) -> List[Candle]:
