@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     TIMESFM_CACHE_TTL_SECONDS: int = 900
     TIMESFM_SERVICE_URL: str = ""
     TIMESFM_SERVICE_TOKEN: str = ""
+    TIMESFM_SERVICE_PROTOCOL: str = "fastapi"  # fastapi or gradio (Hugging Face ZeroGPU)
 
     # CORS
     CORS_ORIGINS: List[str] = [
