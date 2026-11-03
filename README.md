@@ -16,6 +16,7 @@ An AI-powered market analysis and educational insights platform for NSE markets 
 - **Chart Analysis** - Pattern detection, entry/SL/target levels
 - **AI Chat Assistant** - Market-related Q&A (educational only)
 - **AI Trade Review** - Analyze completed trades for improvements
+- **TimesFM Forecasting (optional)** - Experimental daily close forecasts with P10/P50/P90 uncertainty ranges; served by a separate inference service
 
 ### Trading Tools
 - **Trade Journal** - Log trades, track performance metrics
