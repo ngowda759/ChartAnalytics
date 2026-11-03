@@ -81,6 +81,57 @@ def _build_forecast_payload(
     }
 
 
+def _parse_gradio_event_stream(lines) -> dict:
+    """Extract the completed JSON result from Gradio's SSE response."""
+    current_event = None
+    for line in lines:
+        if line.startswith("event:"):
+            current_event = line.partition(":")[2].strip()
+        elif line.startswith("data:"):
+            raw = line.partition(":")[2].strip()
+            if current_event == "error":
+                raise ValueError("Gradio inference endpoint returned an error.")
+            if current_event == "complete":
+                result = json.loads(raw)
+                if isinstance(result, list) and len(result) == 1:
+                    result = result[0]
+                if isinstance(result, str):
+                    result = json.loads(result)
+                if not isinstance(result, dict):
+                    raise ValueError("Gradio inference endpoint returned an invalid result.")
+                return result
+    raise ValueError("Gradio inference endpoint did not complete the request.")
+
+
+def _call_gradio_inference(
+    service_url: str,
+    service_token: str,
+    symbol: str,
+    closes: list[float],
+    horizon: int,
+) -> dict:
+    """Call a private Hugging Face Gradio Space through its queued API."""
+    headers = {"Authorization": f"Bearer {service_token}"}
+    timeout = httpx.Timeout(150.0, connect=15.0)
+    with httpx.Client(timeout=timeout) as client:
+        submitted = client.post(
+            f"{service_url}/gradio_api/call/forecast",
+            headers=headers,
+            json={"data": [symbol, closes, horizon]},
+        )
+        submitted.raise_for_status()
+        event_id = submitted.json().get("event_id")
+        if not event_id:
+            raise ValueError("Gradio did not return an inference event ID.")
+        with client.stream(
+            "GET",
+            f"{service_url}/gradio_api/call/forecast/{event_id}",
+            headers={**headers, "Accept": "text/event-stream"},
+        ) as response:
+            response.raise_for_status()
+            return _parse_gradio_event_stream(response.iter_lines())
+
+
 def forecast_symbol(
     symbol: str,
     horizon: int = 10,
