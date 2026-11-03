@@ -8,7 +8,7 @@ interface TimesFMForecastProps {
 }
 
 function toChartTime(value: string): number {
-  return Math.floor(new Date(value).getTime() / 1000);
+  return Math.floor(new Date(`${value.slice(0, 10)}T00:00:00Z`).getTime() / 1000);
 }
 
 export function TimesFMForecastPanel({ symbol }: TimesFMForecastProps) {
@@ -16,6 +16,11 @@ export function TimesFMForecastPanel({ symbol }: TimesFMForecastProps) {
   const [forecast, setForecast] = useState<TimesFMForecast | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setForecast(null);
+    setError(null);
+  }, [symbol]);
 
   const loadForecast = async (refresh = false) => {
     setLoading(true);
