@@ -34,9 +34,10 @@ def test_forecast_payload_uses_median_and_outer_quantiles():
     assert result["forecast"][1]["timestamp"].startswith("2026-11-04")
 
 
-def test_forecast_symbol_uses_real_closes_and_model(monkeypatch):
+def test_forecast_symbol_uses_real_closes_and_remote_inference(monkeypatch):
     from datetime import timedelta
 
+    from app.core.config import settings
     from app.services import market_data, timesfm_forecast
 
     candles = [
@@ -45,22 +46,33 @@ def test_forecast_symbol_uses_real_closes_and_model(monkeypatch):
     ]
     calls = {}
 
-    class FakeModel:
-        def forecast(self, horizon, inputs):
-            calls["horizon"] = horizon
-            calls["inputs"] = inputs
-            points = np.asarray([[160.0, 161.0]], dtype=np.float32)
-            quantiles = np.zeros((1, horizon, 10), dtype=np.float32)
-            quantiles[:, :, 1] = 155.0
-            quantiles[:, :, 9] = 165.0
-            return points[:, :horizon], quantiles
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "symbol": "NIFTY",
+                "model_id": settings.TIMESFM_MODEL_ID,
+                "forecast": [
+                    {"step": 1, "median": 160.0, "lower": 155.0, "upper": 165.0},
+                    {"step": 2, "median": 161.0, "lower": 156.0, "upper": 166.0},
+                ],
+            }
+
+    def fake_post(url, **kwargs):
+        calls["url"] = url
+        calls["kwargs"] = kwargs
+        return FakeResponse()
 
     monkeypatch.setattr(
         market_data,
         "get_real_candles",
         lambda symbol, interval, limit: (candles, market_data.SOURCE_YFINANCE),
     )
-    monkeypatch.setattr(timesfm_forecast, "_load_model", lambda: FakeModel())
+    monkeypatch.setattr(timesfm_forecast.httpx, "post", fake_post)
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_URL", "https://timesfm.example")
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_TOKEN", "test-token")
     timesfm_forecast.clear_forecast_cache()
 
     result = timesfm_forecast.forecast_symbol("nifty", horizon=2, context=60, refresh=True)
@@ -68,12 +80,15 @@ def test_forecast_symbol_uses_real_closes_and_model(monkeypatch):
     assert result["symbol"] == "NIFTY"
     assert result["source"] == market_data.SOURCE_YFINANCE
     assert result["forecast"][0]["median"] == 160.0
-    assert calls["horizon"] == 2
-    assert len(calls["inputs"][0]) == 60
+    assert calls["url"] == "https://timesfm.example/forecast"
+    assert calls["kwargs"]["headers"]["Authorization"] == "Bearer test-token"
+    assert len(calls["kwargs"]["json"]["closes"]) == 60
     timesfm_forecast.clear_forecast_cache()
 
 
 def test_forecast_symbol_rejects_mock_market_data(monkeypatch):
+    import pytest
+
     from app.services import market_data, timesfm_forecast
 
     candles = [Candle(datetime(2026, 1, 1), 100.0)] * 60
@@ -82,14 +97,19 @@ def test_forecast_symbol_rejects_mock_market_data(monkeypatch):
         "get_real_candles",
         lambda symbol, interval, limit: (candles, market_data.SOURCE_MOCK),
     )
-    monkeypatch.setattr(
-        timesfm_forecast,
-        "_load_model",
-        lambda: (_ for _ in ()).throw(AssertionError("model must not load for mock data")),
-    )
     timesfm_forecast.clear_forecast_cache()
 
+    with pytest.raises(timesfm_forecast.TimesFMUnavailable, match="Real daily OHLCV"):
+        timesfm_forecast.forecast_symbol("nifty", horizon=2, context=60, refresh=True)
+
+
+def test_forecast_symbol_requires_remote_service_configuration(monkeypatch):
     import pytest
 
-    with pytest.raises(timesfm_forecast.TimesFMUnavailable, match="Real daily OHLCV"):
+    from app.core.config import settings
+    from app.services import timesfm_forecast
+
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_URL", "")
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_TOKEN", "")
+    with pytest.raises(timesfm_forecast.TimesFMUnavailable, match="not configured"):
         timesfm_forecast.forecast_symbol("nifty", horizon=2, context=60, refresh=True)
