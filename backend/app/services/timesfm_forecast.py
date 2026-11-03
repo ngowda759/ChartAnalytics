@@ -6,6 +6,7 @@ impact the main API process.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, timedelta
@@ -127,18 +128,29 @@ def forecast_symbol(
         raise TimesFMUnavailable("At least 60 valid daily closing prices are required.")
 
     try:
-        response = httpx.post(
-            f"{service_url}/forecast",
-            headers={"Authorization": f"Bearer {service_token}"},
-            json={
-                "symbol": normalized,
-                "closes": closes[-context:].tolist(),
-                "horizon": horizon,
-            },
-            timeout=httpx.Timeout(120.0, connect=10.0),
-        )
-        response.raise_for_status()
-        body = response.json()
+        if settings.TIMESFM_SERVICE_PROTOCOL == "gradio":
+            body = _call_gradio_inference(
+                service_url,
+                service_token,
+                normalized,
+                closes[-context:].tolist(),
+                horizon,
+            )
+        elif settings.TIMESFM_SERVICE_PROTOCOL == "fastapi":
+            response = httpx.post(
+                f"{service_url}/forecast",
+                headers={"Authorization": f"Bearer {service_token}"},
+                json={
+                    "symbol": normalized,
+                    "closes": closes[-context:].tolist(),
+                    "horizon": horizon,
+                },
+                timeout=httpx.Timeout(120.0, connect=10.0),
+            )
+            response.raise_for_status()
+            body = response.json()
+        else:
+            raise ValueError("Unsupported TimesFM inference protocol.")
         if body.get("symbol") != normalized or body.get("model_id") != settings.TIMESFM_MODEL_ID:
             raise ValueError("Inference service returned unexpected model metadata.")
         payload = _build_forecast_payload(
