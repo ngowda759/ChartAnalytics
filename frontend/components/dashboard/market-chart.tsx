@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { marketApi } from '@/lib/api';
 import { IST_OFFSET_SECONDS } from '@/lib/utils';
+import { TimesFMForecastPanel } from './timesfm-forecast';
 
 interface MarketChartProps {
   symbol: string;
@@ -156,6 +157,7 @@ export function MarketChart({ symbol }: MarketChartProps) {
         </span>
       </div>
       <div ref={chartContainerRef} className="w-full" />
+      <TimesFMForecastPanel symbol={symbol} />
       <div className="flex items-center justify-end gap-4 text-xs">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm bg-green-500" />
