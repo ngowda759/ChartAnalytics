@@ -64,10 +64,10 @@ jobs:
           pip install -r requirements-dev.txt
       
       - name: Run linting
-        run: flake8 app --count --show-source --statistics
+        run: flake8 app timesfm_service --count --show-source --statistics
       
       - name: Run tests
-        run: pytest --cov=app --cov-report=xml
+        run: pytest --cov=app --cov=timesfm_service --cov-report=xml
       
       - name: Upload coverage
         uses: codecov/codecov-action@v4
