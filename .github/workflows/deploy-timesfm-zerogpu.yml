@@ -1,0 +1,40 @@
+name: Deploy TimesFM ZeroGPU Space
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Publish private Hugging Face Space
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate deployment configuration
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO_ID: ${{ vars.HF_SPACE_REPO_ID }}
+        run: |
+          test -n "$HF_TOKEN" || (echo "::error::Add HF_TOKEN as a GitHub Actions secret." && exit 1)
+          test -n "$HF_SPACE_REPO_ID" || (echo "::error::Add HF_SPACE_REPO_ID as a repository variable (owner/space-name)." && exit 1)
+          test -f backend/timesfm_zerogpu/app.py
+          test -f backend/timesfm_zerogpu/README.md
+          test -f backend/timesfm_zerogpu/requirements.txt
+
+      - name: Upload Space source
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_REPO_ID: ${{ vars.HF_SPACE_REPO_ID }}
+        run: |
+          python -m pip install --upgrade huggingface_hub
+          hf auth login --token "$HF_TOKEN"
+          hf upload "$HF_SPACE_REPO_ID" backend/timesfm_zerogpu . --repo-type space --commit-message "Deploy ChartAnalytics TimesFM ZeroGPU"
