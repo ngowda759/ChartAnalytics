@@ -577,3 +577,36 @@ export default {
   predictions: predictionsApi,
   system: systemApi,
 };
+
+
+// TimesFM 2.5 daily close forecast
+export interface TimesFMForecastPoint {
+  step: number;
+  timestamp: string;
+  median: number;
+  lower: number;
+  upper: number;
+}
+
+export interface TimesFMForecast {
+  symbol: string;
+  model: string;
+  model_id: string;
+  interval: '1d';
+  target: 'close';
+  source: string;
+  generated_at: string;
+  last_observation: { timestamp: string; close: number };
+  historical_points: number;
+  horizon: number;
+  quantiles: string[];
+  forecast: TimesFMForecastPoint[];
+  disclaimer: string;
+}
+
+export const timesfmApi = {
+  forecast: (symbol: string, horizon = 10, refresh = false) =>
+    fetchApi<TimesFMForecast>(
+      `/timesfm/${encodeURIComponent(symbol)}?horizon=${horizon}${refresh ? '&refresh=true' : ''}`
+    ),
+};
