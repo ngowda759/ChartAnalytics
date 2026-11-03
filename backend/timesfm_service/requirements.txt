@@ -1,0 +1,5 @@
+# Isolated TimesFM inference runtime. Do not install in the main API service.
+fastapi>=0.111.0,<1.0.0
+uvicorn[standard]>=0.29.0,<1.0.0
+numpy>=1.26.4,<3.0.0
+timesfm[torch]==2.0.2

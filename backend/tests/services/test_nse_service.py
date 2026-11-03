@@ -47,6 +47,40 @@ class TestBuildNseDashboardFallback:
     def test_every_widget_has_rows(self, monkeypatch, down):
         if down:
             _force_nse_down(monkeypatch)
+        else:
+            # Keep this test deterministic: do not depend on live NSE market
+            # hours, rate limits, or whether today's market data qualifies for
+            # the derived NR7 / breakout screeners.
+            from app.schemas.scanner import ScreenerRow
+
+            def live_rows(limit=20, **kw):
+                return [
+                    ScreenerRow(
+                        symbol="LIVE",
+                        name="Live",
+                        ltp=100.0,
+                        change_percent=2.0,
+                        volume=1000,
+                        extra={
+                            "open": 98.0,
+                            "high": 101.0,
+                            "low": 97.0,
+                            "prev_close": 98.0,
+                        },
+                    )
+                ]
+
+            for fn_name in (
+                "get_all_indices",
+                "get_sectoral_indices",
+                "get_top_gainers",
+                "get_top_losers",
+                "get_52_week_high",
+                "get_52_week_low",
+                "get_nr7_breakout_candidates",
+                "get_potential_breakouts",
+            ):
+                monkeypatch.setattr(nse_service, fn_name, live_rows)
 
         widgets, source, warnings = _build()
 

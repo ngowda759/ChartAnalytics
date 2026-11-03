@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # How many symbols to fetch concurrently from the live provider.
     SCANNER_CONCURRENCY: int = 5
 
+    # Optional TimesFM 2.5 forecasting runtime (model loaded lazily).
+    TIMESFM_ENABLED: bool = False
+    TIMESFM_MODEL_ID: str = "google/timesfm-2.5-200m-pytorch"
+    TIMESFM_CACHE_TTL_SECONDS: int = 900
+    TIMESFM_SERVICE_URL: str = ""
+    TIMESFM_SERVICE_TOKEN: str = ""
+    TIMESFM_SERVICE_PROTOCOL: str = "fastapi"  # fastapi or gradio (Hugging Face ZeroGPU)
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
