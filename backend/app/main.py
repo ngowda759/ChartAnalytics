@@ -21,6 +21,7 @@ from app.api import (
     agent_analysis,
     system,
     predictions,
+    timesfm as timesfm_api,
 )
 
 # Configure structured logging
@@ -164,7 +165,7 @@ app.include_router(
     prefix="/api/v1/predictions",
     tags=["MiroFish Predictions"],
 )
-app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
+app.include_router(system.router, prefix="/api/v1/system", tags=["System"])\napp.include_router(timesfm_api.router, prefix="/api/v1/timesfm", tags=["TimesFM Forecasting"])
 
 
 @app.get("/")
