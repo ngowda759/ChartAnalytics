@@ -1,4 +1,0 @@
-# Optional ML runtime. Install only when enabling TIMESFM_ENABLED.
-# TimesFM 2.5 weights are Apache-2.0; do not switch to TimesFM 3.0 weights
-# without reviewing its separate model-weight license.
-timesfm[torch]==2.0.2
