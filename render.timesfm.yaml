@@ -1,0 +1,24 @@
+# Optional paid inference service blueprint.
+# This file is intentionally separate from render.yaml so syncing the existing
+# free ChartAnalytics API blueprint cannot create a paid resource unexpectedly.
+services:
+  - type: web
+    name: chartanalytics-timesfm
+    env: python
+    region: singapore
+    plan: standard
+    rootDir: backend/timesfm_service
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: timesfm-model-cache
+      mountPath: /var/cache/huggingface
+      sizeGB: 2
+    envVars:
+      - key: TIMESFM_MODEL_ID
+        value: google/timesfm-2.5-200m-pytorch
+      - key: HF_HOME
+        value: /var/cache/huggingface
+      - key: TIMESFM_SERVICE_TOKEN
+        sync: false
