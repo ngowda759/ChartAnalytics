@@ -32,7 +32,12 @@ class Settings(BaseSettings):
     # Comma-separated scanner universe (NSE symbols). Empty -> default basket.
     SCANNER_UNIVERSE: str = ""
     # How many symbols to fetch concurrently from the live provider.
-    SCANNER_CONCURRENCY: int = 5\n\n    # Optional TimesFM 2.5 forecasting runtime (model loaded lazily).\n    TIMESFM_ENABLED: bool = False\n    TIMESFM_MODEL_ID: str = "google/timesfm-2.5-200m-pytorch"\n    TIMESFM_CACHE_TTL_SECONDS: int = 900
+    SCANNER_CONCURRENCY: int = 5
+
+    # Optional TimesFM 2.5 forecasting runtime (model loaded lazily).
+    TIMESFM_ENABLED: bool = False
+    TIMESFM_MODEL_ID: str = "google/timesfm-2.5-200m-pytorch"
+    TIMESFM_CACHE_TTL_SECONDS: int = 900
 
     # CORS
     CORS_ORIGINS: List[str] = [
