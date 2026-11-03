@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     TIMESFM_ENABLED: bool = False
     TIMESFM_MODEL_ID: str = "google/timesfm-2.5-200m-pytorch"
     TIMESFM_CACHE_TTL_SECONDS: int = 900
+    TIMESFM_SERVICE_URL: str = ""
+    TIMESFM_SERVICE_TOKEN: str = ""
 
     # CORS
     CORS_ORIGINS: List[str] = [
