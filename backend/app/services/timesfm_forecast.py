@@ -1,15 +1,16 @@
-"""Optional TimesFM 2.5 daily-close forecasting service.
+"""TimesFM forecast orchestration in the main ChartAnalytics API.
 
-The model is loaded lazily and only when TIMESFM_ENABLED=true. It consumes
-real OHLCV from the unified market-data resolver; mock candles are rejected.
+Market data remains sourced by the existing unified resolver. Inference is
+forwarded to a separately provisioned TimesFM service so model memory cannot
+impact the main API process.
 """
 from __future__ import annotations
 
 import threading
 import time
 from datetime import datetime, timedelta
-from typing import Any
 
+import httpx
 import numpy as np
 import structlog
 
@@ -17,62 +18,16 @@ from app.core.config import settings
 from app.services import market_data
 
 logger = structlog.get_logger()
-
-_MODEL_ID = "google/timesfm-2.5-200m-pytorch"
-_MODEL: Any = None
-_MODEL_LOCK = threading.Lock()
 _CACHE: dict[tuple[str, int, int], tuple[float, dict]] = {}
 _CACHE_LOCK = threading.Lock()
 
 
 class TimesFMUnavailable(RuntimeError):
-    """Raised when TimesFM cannot serve a forecast."""
-
-
-def _load_model():
-    """Load and compile the pinned TimesFM 2.5 checkpoint once per process."""
-    global _MODEL
-    if _MODEL is not None:
-        return _MODEL
-    with _MODEL_LOCK:
-        if _MODEL is not None:
-            return _MODEL
-        try:
-            import timesfm
-        except ImportError as exc:
-            raise TimesFMUnavailable(
-                "TimesFM is not installed. Install backend/timesfm-requirements.txt."
-            ) from exc
-
-        model_id = getattr(settings, "TIMESFM_MODEL_ID", _MODEL_ID) or _MODEL_ID
-        try:
-            # Avoid torch.compile's first-request compilation cost in API workers.
-            # Production can opt into a compiled model in a dedicated worker later.
-            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
-                model_id, torch_compile=False
-            )
-            model.compile(
-                timesfm.ForecastConfig(
-                    max_context=1024,
-                    max_horizon=30,
-                    normalize_inputs=True,
-                    per_core_batch_size=1,
-                    use_continuous_quantile_head=True,
-                    force_flip_invariance=True,
-                    infer_is_positive=True,
-                    fix_quantile_crossing=True,
-                )
-            )
-        except Exception as exc:
-            logger.exception("timesfm_model_load_failed", model_id=model_id)
-            raise TimesFMUnavailable("TimesFM model could not be loaded.") from exc
-        _MODEL = model
-        logger.info("timesfm_model_loaded", model_id=model_id)
-        return _MODEL
+    """Raised when the isolated TimesFM inference service cannot serve a forecast."""
 
 
 def _next_weekday(last_date: datetime, offset: int) -> datetime:
-    """Advance by trading weekdays (weekends skipped; exchange holidays unknown)."""
+    """Advance by weekdays; the exchange holiday calendar is not applied."""
     current = last_date
     remaining = offset
     while remaining:
@@ -87,27 +42,24 @@ def _build_forecast_payload(
     candles: list,
     source: str,
     horizon: int,
-    point: np.ndarray,
-    quantiles: np.ndarray,
+    forecast_points: list[dict],
 ) -> dict:
-    """Convert TimesFM arrays into a stable API payload."""
     last_date = candles[-1].date
     forecasts = []
-    for index in range(horizon):
-        median = float(point[index])
-        lower = float(quantiles[index, 1])  # q10
-        upper = float(quantiles[index, 9])  # q90
+    for index, point in enumerate(forecast_points[:horizon]):
         forecasts.append({
             "step": index + 1,
             "timestamp": _next_weekday(last_date, index + 1).isoformat(),
-            "median": round(median, 4),
-            "lower": round(min(lower, upper), 4),
-            "upper": round(max(lower, upper), 4),
+            "median": round(float(point["median"]), 4),
+            "lower": round(float(point["lower"]), 4),
+            "upper": round(float(point["upper"]), 4),
         })
+    if len(forecasts) != horizon:
+        raise TimesFMUnavailable("Inference service returned an incomplete forecast.")
     return {
         "symbol": symbol.upper(),
         "model": "TimesFM 2.5 200M",
-        "model_id": getattr(settings, "TIMESFM_MODEL_ID", _MODEL_ID) or _MODEL_ID,
+        "model_id": settings.TIMESFM_MODEL_ID,
         "interval": "1d",
         "target": "close",
         "source": source,
@@ -128,8 +80,13 @@ def _build_forecast_payload(
     }
 
 
-def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh: bool = False) -> dict:
-    """Generate a daily closing-price forecast from real historical candles."""
+def forecast_symbol(
+    symbol: str,
+    horizon: int = 10,
+    context: int = 512,
+    refresh: bool = False,
+) -> dict:
+    """Fetch real daily candles and call the isolated TimesFM inference service."""
     normalized = symbol.strip().upper()
     if not normalized:
         raise ValueError("symbol must not be empty")
@@ -138,16 +95,29 @@ def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh:
     if not 60 <= context <= 1024:
         raise ValueError("context must be between 60 and 1024")
 
+    service_url = (settings.TIMESFM_SERVICE_URL or "").rstrip("/")
+    service_token = settings.TIMESFM_SERVICE_TOKEN or ""
+    if not service_url or not service_token:
+        raise TimesFMUnavailable(
+            "The dedicated TimesFM inference service is not configured."
+        )
+
     cache_key = (normalized, horizon, context)
-    ttl = max(0, int(getattr(settings, "TIMESFM_CACHE_TTL_SECONDS", 900)))
+    ttl = max(0, int(settings.TIMESFM_CACHE_TTL_SECONDS))
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
         if not refresh and cached and time.time() - cached[0] < ttl:
             return cached[1]
 
-    candles, source = market_data.get_real_candles(normalized, interval="1d", limit=context)
-    if not candles or source in (market_data.SOURCE_UNAVAILABLE, market_data.SOURCE_MOCK):
+    candles, source = market_data.get_real_candles(
+        normalized, interval="1d", limit=context
+    )
+    if not candles or source in (
+        market_data.SOURCE_UNAVAILABLE,
+        market_data.SOURCE_MOCK,
+    ):
         raise TimesFMUnavailable("Real daily OHLCV data is unavailable for this symbol.")
+
     valid_candles = [
         candle for candle in candles
         if candle.close is not None and np.isfinite(candle.close)
@@ -156,22 +126,27 @@ def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh:
     if closes.size < 60:
         raise TimesFMUnavailable("At least 60 valid daily closing prices are required.")
 
-    model = _load_model()
     try:
-        point_forecast, quantile_forecast = model.forecast(
-            horizon=horizon,
-            inputs=[closes[-context:]],
+        response = httpx.post(
+            f"{service_url}/forecast",
+            headers={"Authorization": f"Bearer {service_token}"},
+            json={
+                "symbol": normalized,
+                "closes": closes[-context:].tolist(),
+                "horizon": horizon,
+            },
+            timeout=httpx.Timeout(120.0, connect=10.0),
         )
-        point = np.asarray(point_forecast)[0]
-        quantiles = np.asarray(quantile_forecast)[0]
-        if point.shape[0] < horizon or quantiles.shape[0] < horizon or quantiles.shape[1] < 10:
-            raise ValueError("Unexpected TimesFM forecast output shape.")
+        response.raise_for_status()
+        body = response.json()
+        if body.get("symbol") != normalized or body.get("model_id") != settings.TIMESFM_MODEL_ID:
+            raise ValueError("Inference service returned unexpected model metadata.")
         payload = _build_forecast_payload(
-            normalized, valid_candles, source, horizon, point[:horizon], quantiles[:horizon]
+            normalized, valid_candles, source, horizon, body.get("forecast", [])
         )
-    except Exception as exc:
-        logger.exception("timesfm_inference_failed", symbol=normalized)
-        raise TimesFMUnavailable("TimesFM inference failed.") from exc
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        logger.exception("timesfm_remote_inference_failed", symbol=normalized)
+        raise TimesFMUnavailable("The dedicated TimesFM inference service is unavailable.") from exc
 
     with _CACHE_LOCK:
         _CACHE[cache_key] = (time.time(), payload)
