@@ -144,7 +144,11 @@ def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh:
     candles, source = market_data.get_real_candles(normalized, interval="1d", limit=context)
     if not candles or source in (market_data.SOURCE_UNAVAILABLE, market_data.SOURCE_MOCK):
         raise TimesFMUnavailable("Real daily OHLCV data is unavailable for this symbol.")
-    closes = np.asarray([c.close for c in candles if np.isfinite(c.close)], dtype=np.float32)
+    valid_candles = [
+        candle for candle in candles
+        if candle.close is not None and np.isfinite(candle.close)
+    ]
+    closes = np.asarray([c.close for c in valid_candles], dtype=np.float32)
     if closes.size < 60:
         raise TimesFMUnavailable("At least 60 valid daily closing prices are required.")
 
@@ -159,7 +163,7 @@ def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh:
         if point.shape[0] < horizon or quantiles.shape[0] < horizon or quantiles.shape[1] < 10:
             raise ValueError("Unexpected TimesFM forecast output shape.")
         payload = _build_forecast_payload(
-            normalized, candles, source, horizon, point[:horizon], quantiles[:horizon]
+            normalized, valid_candles, source, horizon, point[:horizon], quantiles[:horizon]
         )
     except Exception as exc:
         logger.exception("timesfm_inference_failed", symbol=normalized)
