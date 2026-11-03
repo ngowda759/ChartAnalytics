@@ -63,6 +63,10 @@ TIMESFM_MODEL_ID=google/timesfm-2.5-200m-pytorch
 TIMESFM_CACHE_TTL_SECONDS=900
 ```
 
+Configure the Vercel frontend with `NEXT_PUBLIC_TIMESFM_ENABLED=true` only
+after the backend and inference service smoke tests pass. Leave it unset or
+false to hide the forecast panel until the feature is ready.
+
 The main backend sends only validated daily close values to the inference
 service over an authenticated HTTPS request. The model service does not access
 the app database or market-data providers. Inference is serialized to avoid
