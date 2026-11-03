@@ -32,70 +32,56 @@ low or volume values. The P10/P90 values are model quantiles, not guaranteed
 price bounds. This is a research/decision-support feature, not investment
 advice.
 
-## Installation and configuration
+## Deployment on the existing free Render service
 
-The core backend does not install PyTorch or TimesFM. This keeps normal API
-startup lightweight and avoids breaking deployments that do not use the model.
+The existing Render service remains the **main ChartAnalytics API** and stays
+on its Free plan. Do not install PyTorch or TimesFM in that service: its
+512 MB memory limit is insufficient for reliable model inference and adding
+the model would risk the existing APIs.
 
-The inference runtime is intentionally isolated from the main backend. Its
-dependencies are in `backend/timesfm_service/requirements.txt`; the main
-backend does not install PyTorch or TimesFM.
+The recommended no-additional-Render-cost inference target is a **private
+Hugging Face ZeroGPU Gradio Space**:
 
-The repository includes an optional paid Render blueprint at
-`render.timesfm.yaml`. It is deliberately separate from the existing
-`render.yaml`, so syncing the current free API blueprint cannot create a paid
-service unexpectedly. The optional blueprint creates a dedicated 2 CPU / 4 GB
-RAM service with a 2 GB persistent Hugging Face cache disk.
+- ZeroGPU provides dynamically allocated GPU inference without a dedicated
+  always-on model server.
+- Eligible free personal accounts can host up to two ZeroGPU Spaces.
+- Free accounts currently receive 5 minutes of GPU execution quota per day;
+  authenticated calls consume the token owner's quota.
+- Spaces can sleep or queue when GPU capacity is busy. It is suitable for
+  personal/on-demand use, not a guaranteed production SLA.
+- A private Space protects the inference API. The backend uses a Hugging Face
+  read token; keep it only in Render environment variables.
 
-Configure the dedicated service with:
-```dotenv
-TIMESFM_MODEL_ID=google/timesfm-2.5-200m-pytorch
-TIMESFM_SERVICE_TOKEN=<a long random secret>
-HF_HOME=/var/cache/huggingface
-```
+Space source is in `backend/timesfm_zerogpu/`. Create a private Gradio Space,
+select ZeroGPU hardware, and publish the contents of that directory to its
+root. The Space uses the Apache-2.0 TimesFM 2.5 200M checkpoint.
 
-Configure the existing ChartAnalytics backend with:
+Configure the existing Render backend:
+
 ```dotenv
 TIMESFM_ENABLED=true
-TIMESFM_SERVICE_URL=https://<dedicated-service-host>
-TIMESFM_SERVICE_TOKEN=<the same secret>
+TIMESFM_SERVICE_PROTOCOL=gradio
+TIMESFM_SERVICE_URL=https://<your-space-subdomain>.hf.space
+TIMESFM_SERVICE_TOKEN=<hugging-face-read-token>
 TIMESFM_MODEL_ID=google/timesfm-2.5-200m-pytorch
 TIMESFM_CACHE_TTL_SECONDS=900
 ```
 
-Configure the Vercel frontend with `NEXT_PUBLIC_TIMESFM_ENABLED=true` only
-after the backend and inference service smoke tests pass. Leave it unset or
-false to hide the forecast panel until the feature is ready.
+Do not put the Hugging Face token in Vercel or browser code. The Render backend
+sends only validated daily closing prices to the private Space. The Space does
+not access ChartAnalytics databases or market-data providers.
 
-The main backend sends only validated daily close values to the inference
-service over an authenticated HTTPS request. The model service does not access
-the app database or market-data providers. Inference is serialized to avoid
-concurrent requests multiplying memory use.
+The original isolated FastAPI inference service remains available for a
+separately provisioned environment using
+`TIMESFM_SERVICE_PROTOCOL=fastapi`, but it is not required for the free
+ZeroGPU deployment.
 
-The model checkpoint is downloaded from Hugging Face on first forecast and
-cached on the dedicated service's persistent disk. Keep outbound Hugging Face
-access enabled. The first model load can be slow. Keep
-`TIMESFM_ENABLED=false` until the service is provisioned, its health check
-passes, and a real forecast has been verified. The rest of the application
-continues to work without TimesFM.
-
-### Current Render deployment constraint
-
-The repository's current `render.yaml` declares the main backend as a Render
-Free web service with 512 MB RAM. TimesFM 2.5's upstream system-requirements
-guide recommends 4–8 GB RAM for CPU-only inference. It estimates about 1.5 GB
-for model weights and runtime before allowing additional headroom; the
-checkpoint is approximately 800 MB. The free service also has an ephemeral
-filesystem and can spin down when idle. Therefore the model must **not** be
-installed or enabled inside the existing API service.
-
-The isolated blueprint uses Render's 2 CPU / 4 GB RAM Pro service as a
-minimum starting point, consistent with the upstream CPU hardware tier.
-Actual latency and peak memory must be measured before production traffic is
-enabled. Render currently lists this compute plan at $85/month; the 2 GB
-persistent disk is additional. The persistent cache disk avoids downloading
-the model weights on every restart. Do not upgrade compute or incur recurring
-costs without explicit owner approval.
+Keep `TIMESFM_ENABLED=false` and
+`NEXT_PUBLIC_TIMESFM_ENABLED` unset until the Space has been deployed and a
+real forecast has passed the smoke test. If ZeroGPU quota is exhausted, the
+Space is sleeping, or the GPU queue is unavailable, TimesFM returns a
+controlled unavailable response. Existing MiroFish, market-data, screener and
+chart functionality remains independent.
 
 ## API
 
