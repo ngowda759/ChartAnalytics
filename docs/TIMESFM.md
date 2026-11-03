@@ -44,7 +44,7 @@ backend does not install PyTorch or TimesFM.
 The repository includes an optional paid Render blueprint at
 `render.timesfm.yaml`. It is deliberately separate from the existing
 `render.yaml`, so syncing the current free API blueprint cannot create a paid
-service unexpectedly. The optional blueprint creates a dedicated 1 CPU / 2 GB
+service unexpectedly. The optional blueprint creates a dedicated 2 CPU / 4 GB
 RAM service with a 2 GB persistent Hugging Face cache disk.
 
 Configure the dedicated service with:
@@ -83,14 +83,17 @@ continues to work without TimesFM.
 
 The repository's current `render.yaml` declares the main backend as a Render
 Free web service with 512 MB RAM. TimesFM 2.5's upstream system-requirements
-guide estimates roughly 1.5 GB RAM for a small CPU inference workload; the
-checkpoint is approximately 925 MB. The free service also has an ephemeral
+guide recommends 4–8 GB RAM for CPU-only inference. It estimates about 1.5 GB
+for model weights and runtime before allowing additional headroom; the
+checkpoint is approximately 800 MB. The free service also has an ephemeral
 filesystem and can spin down when idle. Therefore the model must **not** be
 installed or enabled inside the existing API service.
 
-The isolated blueprint uses Render's 1 CPU / 2 GB RAM Standard service as a
-minimum starting point. Actual latency and memory must be measured before
-production traffic is enabled. The persistent cache disk avoids downloading
+The isolated blueprint uses Render's 2 CPU / 4 GB RAM Pro service as a
+minimum starting point, consistent with the upstream CPU hardware tier.
+Actual latency and peak memory must be measured before production traffic is
+enabled. Render currently lists this compute plan at $85/month; the 2 GB
+persistent disk is additional. The persistent cache disk avoids downloading
 the model weights on every restart. Do not upgrade compute or incur recurring
 costs without explicit owner approval.
 
