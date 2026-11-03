@@ -21,8 +21,16 @@ Create a **private Gradio Space** and select **ZeroGPU** hardware. Free personal
 accounts in good standing may host up to two ZeroGPU Spaces; eligibility
 requires a verified email and an account older than 30 days.
 
-Copy `app.py` and `requirements.txt` to the Space repository. No paid Render
-service or paid Hugging Face hardware is required.
+The repository includes a manual GitHub Actions deployment workflow:
+`.github/workflows/deploy-timesfm-zerogpu.yml`. Add these repository settings:
+
+- Actions secret `HF_TOKEN`: a Hugging Face write token for the Space.
+- Actions variable `HF_SPACE_REPO_ID`: the Space repository ID
+  (`owner/space-name`).
+
+Then run **Actions → Deploy TimesFM ZeroGPU Space → Run workflow**. It uploads
+only this directory to the Space root. No paid Render service or paid Hugging
+Face hardware is required.
 
 The Space should remain private. Do not publish this inference endpoint
 publicly: the ChartAnalytics backend sends a Hugging Face read token when
