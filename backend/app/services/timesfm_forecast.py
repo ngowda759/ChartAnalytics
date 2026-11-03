@@ -144,7 +144,7 @@ def forecast_symbol(
         payload = _build_forecast_payload(
             normalized, valid_candles, source, horizon, body.get("forecast", [])
         )
-    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
         logger.exception("timesfm_remote_inference_failed", symbol=normalized)
         raise TimesFMUnavailable("The dedicated TimesFM inference service is unavailable.") from exc
 
