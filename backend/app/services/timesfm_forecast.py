@@ -21,7 +21,7 @@ logger = structlog.get_logger()
 _MODEL_ID = "google/timesfm-2.5-200m-pytorch"
 _MODEL: Any = None
 _MODEL_LOCK = threading.Lock()
-_CACHE: dict[tuple[str, int], tuple[float, dict]] = {}
+_CACHE: dict[tuple[str, int, int], tuple[float, dict]] = {}
 _CACHE_LOCK = threading.Lock()
 
 
@@ -103,7 +103,7 @@ def _build_forecast_payload(
     return {
         "symbol": symbol.upper(),
         "model": "TimesFM 2.5 200M",
-        "model_id": _MODEL_ID,
+        "model_id": getattr(settings, "TIMESFM_MODEL_ID", _MODEL_ID) or _MODEL_ID,
         "interval": "1d",
         "target": "close",
         "source": source,
@@ -134,7 +134,7 @@ def forecast_symbol(symbol: str, horizon: int = 10, context: int = 512, refresh:
     if not 60 <= context <= 1024:
         raise ValueError("context must be between 60 and 1024")
 
-    cache_key = (normalized, horizon)
+    cache_key = (normalized, horizon, context)
     ttl = max(0, int(getattr(settings, "TIMESFM_CACHE_TTL_SECONDS", 900)))
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
