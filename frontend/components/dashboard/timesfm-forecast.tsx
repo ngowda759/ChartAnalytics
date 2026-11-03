@@ -16,6 +16,7 @@ export function TimesFMForecastPanel({ symbol }: TimesFMForecastProps) {
   const [forecast, setForecast] = useState<TimesFMForecast | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isEnabled = process.env.NEXT_PUBLIC_TIMESFM_ENABLED === 'true';
 
   useEffect(() => {
     setForecast(null);
@@ -110,6 +111,8 @@ export function TimesFMForecastPanel({ symbol }: TimesFMForecastProps) {
       chart?.remove();
     };
   }, [forecast]);
+
+  if (!isEnabled) return null;
 
   return (
     <section className="rounded-lg border bg-card p-4 space-y-3">
