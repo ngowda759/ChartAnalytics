@@ -46,7 +46,11 @@ def _load_model():
 
         model_id = getattr(settings, "TIMESFM_MODEL_ID", _MODEL_ID) or _MODEL_ID
         try:
-            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(model_id)
+            # Avoid torch.compile's first-request compilation cost in API workers.
+            # Production can opt into a compiled model in a dedicated worker later.
+            model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
+                model_id, torch_compile=False
+            )
             model.compile(
                 timesfm.ForecastConfig(
                     max_context=1024,
