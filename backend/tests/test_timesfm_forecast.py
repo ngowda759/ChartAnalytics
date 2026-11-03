@@ -114,3 +114,37 @@ def test_forecast_symbol_requires_remote_service_configuration(monkeypatch):
     monkeypatch.setattr(settings, "TIMESFM_SERVICE_TOKEN", "")
     with pytest.raises(timesfm_forecast.TimesFMUnavailable, match="not configured"):
         timesfm_forecast.forecast_symbol("nifty", horizon=2, context=60, refresh=True)
+
+
+
+def test_parse_gradio_sse_returns_completed_forecast():
+    from app.services.timesfm_forecast import _parse_gradio_event_stream
+
+    result = _parse_gradio_event_stream([
+        "event: complete",
+        'data: [{"symbol":"NIFTY","model_id":"google/timesfm-2.5-200m-pytorch","forecast":[]}]',
+        "",
+    ])
+    assert result["symbol"] == "NIFTY"
+
+
+def test_parse_gradio_sse_rejects_error_event():
+    import pytest
+
+    from app.services.timesfm_forecast import _parse_gradio_event_stream
+
+    with pytest.raises(ValueError, match="returned an error"):
+        _parse_gradio_event_stream([
+            "event: error",
+            'data: "GPU quota exceeded"',
+            "",
+        ])
+
+
+def test_parse_gradio_sse_rejects_incomplete_stream():
+    import pytest
+
+    from app.services.timesfm_forecast import _parse_gradio_event_stream
+
+    with pytest.raises(ValueError, match="did not complete"):
+        _parse_gradio_event_stream(["event: pending", "data: null"])
