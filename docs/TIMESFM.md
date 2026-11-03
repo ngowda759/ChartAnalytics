@@ -14,13 +14,17 @@ GET /api/v1/timesfm/{symbol}
        |
 FastAPI timesfm router
        |
-TimesFM forecasting service
+Main API forecast orchestrator
   |-- unified market_data.get_real_candles(symbol, "1d", context)
   |-- validate real OHLCV; reject mock/unavailable data
+  |-- authenticated request to isolated inference service
+       |
+Dedicated TimesFM inference service
   |-- lazy-load TimesFM 2.5 PyTorch checkpoint once per process
+  |-- serialize inference to bound memory use
   |-- return median (P50), P10 and P90 per future step
        |
-In-process TTL cache
+Main API in-process TTL cache
 ```
 
 Only the close series is forecast. The API does not invent future open, high,
@@ -33,45 +37,58 @@ advice.
 The core backend does not install PyTorch or TimesFM. This keeps normal API
 startup lightweight and avoids breaking deployments that do not use the model.
 
-From the backend directory, install the optional runtime:
+The inference runtime is intentionally isolated from the main backend. Its
+dependencies are in `backend/timesfm_service/requirements.txt`; the main
+backend does not install PyTorch or TimesFM.
 
-```bash
-pip install -r timesfm-requirements.txt
+The repository includes an optional paid Render blueprint at
+`render.timesfm.yaml`. It is deliberately separate from the existing
+`render.yaml`, so syncing the current free API blueprint cannot create a paid
+service unexpectedly. The optional blueprint creates a dedicated 1 CPU / 2 GB
+RAM service with a 2 GB persistent Hugging Face cache disk.
+
+Configure the dedicated service with:
+```dotenv
+TIMESFM_MODEL_ID=google/timesfm-2.5-200m-pytorch
+TIMESFM_SERVICE_TOKEN=<a long random secret>
+HF_HOME=/var/cache/huggingface
 ```
 
-Set these environment variables in the backend deployment:
-
+Configure the existing ChartAnalytics backend with:
 ```dotenv
 TIMESFM_ENABLED=true
+TIMESFM_SERVICE_URL=https://<dedicated-service-host>
+TIMESFM_SERVICE_TOKEN=<the same secret>
 TIMESFM_MODEL_ID=google/timesfm-2.5-200m-pytorch
 TIMESFM_CACHE_TTL_SECONDS=900
 ```
 
-The model checkpoint is downloaded from Hugging Face on first forecast and
-cached by the Hugging Face runtime. Ensure the deployment has outbound access
-to Hugging Face and sufficient disk, RAM and CPU/GPU resources. Model loading
-and the first inference can be slow. For production traffic, use a dedicated
-worker/service with a warmed model rather than scaling many web workers that
-each load their own copy.
+The main backend sends only validated daily close values to the inference
+service over an authenticated HTTPS request. The model service does not access
+the app database or market-data providers. Inference is serialized to avoid
+concurrent requests multiplying memory use.
 
-Keep `TIMESFM_ENABLED=false` until the optional dependency and model download
-have been validated in the target environment. The rest of the application
+The model checkpoint is downloaded from Hugging Face on first forecast and
+cached on the dedicated service's persistent disk. Keep outbound Hugging Face
+access enabled. The first model load can be slow. Keep
+`TIMESFM_ENABLED=false` until the service is provisioned, its health check
+passes, and a real forecast has been verified. The rest of the application
 continues to work without TimesFM.
 
 ### Current Render deployment constraint
 
-The repository's current `render.yaml` declares the backend as a Render Free
-web service. Render Free provides 512 MB RAM, while TimesFM 2.5's upstream
-system-requirements guide estimates roughly 1.5 GB RAM for a small CPU inference
-workload; the model checkpoint itself is approximately 925 MB. The free service
-also has an ephemeral filesystem and can spin down when idle. Therefore the
-TimesFM model must **not** be installed or enabled on that service.
+The repository's current `render.yaml` declares the main backend as a Render
+Free web service with 512 MB RAM. TimesFM 2.5's upstream system-requirements
+guide estimates roughly 1.5 GB RAM for a small CPU inference workload; the
+checkpoint is approximately 925 MB. The free service also has an ephemeral
+filesystem and can spin down when idle. Therefore the model must **not** be
+installed or enabled inside the existing API service.
 
-For production inference, use a separately provisioned worker/service with at
-least 2 GB RAM (4 GB is a safer starting point), persistent model cache, and
-enough CPU for acceptable latency, or use a managed inference endpoint. Keep
-the existing ChartAnalytics API service on its current plan. Do not upgrade
-compute or incur new recurring costs without explicit owner approval.
+The isolated blueprint uses Render's 1 CPU / 2 GB RAM Standard service as a
+minimum starting point. Actual latency and memory must be measured before
+production traffic is enabled. The persistent cache disk avoids downloading
+the model weights on every restart. Do not upgrade compute or incur recurring
+costs without explicit owner approval.
 
 ## API
 
