@@ -58,6 +58,21 @@ Keep `TIMESFM_ENABLED=false` until the optional dependency and model download
 have been validated in the target environment. The rest of the application
 continues to work without TimesFM.
 
+### Current Render deployment constraint
+
+The repository's current `render.yaml` declares the backend as a Render Free
+web service. Render Free provides 512 MB RAM, while TimesFM 2.5's upstream
+system-requirements guide estimates roughly 1.5 GB RAM for a small CPU inference
+workload; the model checkpoint itself is approximately 925 MB. The free service
+also has an ephemeral filesystem and can spin down when idle. Therefore the
+TimesFM model must **not** be installed or enabled on that service.
+
+For production inference, use a separately provisioned worker/service with at
+least 2 GB RAM (4 GB is a safer starting point), persistent model cache, and
+enough CPU for acceptable latency, or use a managed inference endpoint. Keep
+the existing ChartAnalytics API service on its current plan. Do not upgrade
+compute or incur new recurring costs without explicit owner approval.
+
 ## API
 
 ```http
