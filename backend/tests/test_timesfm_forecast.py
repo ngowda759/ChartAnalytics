@@ -89,8 +89,11 @@ def test_forecast_symbol_uses_real_closes_and_remote_inference(monkeypatch):
 def test_forecast_symbol_rejects_mock_market_data(monkeypatch):
     import pytest
 
+    from app.core.config import settings
     from app.services import market_data, timesfm_forecast
 
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_URL", "https://timesfm.example")
+    monkeypatch.setattr(settings, "TIMESFM_SERVICE_TOKEN", "test-token")
     candles = [Candle(datetime(2026, 1, 1), 100.0)] * 60
     monkeypatch.setattr(
         market_data,
